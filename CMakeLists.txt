@@ -38,6 +38,8 @@ endif()
 # Main executable
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/ui/scene_manager.cpp
+    src/ui/menu_scene.cpp
 )
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_link_libraries(${PROJECT_NAME} PRIVATE
