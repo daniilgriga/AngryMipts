@@ -5,10 +5,43 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# TODO(C): added dependencies (SFML, Box2D, nlohmann_json)
+find_package(nlohmann_json QUIET)
+if(nlohmann_json_FOUND)
+    message(STATUS "Found nlohmann_json package")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include/nlohmann/json.hpp")
+    add_library(nlohmann_json INTERFACE)
+    target_include_directories(nlohmann_json INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include"
+    )
+    add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
+    message(STATUS "Using vendored nlohmann_json from external/")
+else()
+    message(FATAL_ERROR
+        "nlohmann_json not found. Install nlohmann-json3-dev or add external/nlohmann_json."
+    )
+endif()
+
+add_library(angry_data
+    src/data/level_loader.cpp
+    src/data/logger.cpp
+    src/data/score_saver.cpp
+)
+target_include_directories(angry_data PUBLIC src)
+if(TARGET nlohmann_json::nlohmann_json)
+    target_link_libraries(angry_data PUBLIC nlohmann_json::nlohmann_json)
+endif()
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
 )
-
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_link_libraries(${PROJECT_NAME} PRIVATE angry_data)
+
+add_executable(angry_data_smoke
+    src/data/level_loader_smoke.cpp
+)
+target_include_directories(angry_data_smoke PRIVATE src)
+target_link_libraries(angry_data_smoke PRIVATE angry_data)
+target_compile_definitions(angry_data_smoke PRIVATE
+    ANGRY_MIPTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
