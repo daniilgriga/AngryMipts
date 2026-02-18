@@ -3,10 +3,34 @@
 #include "data/logger.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 
 namespace angry
 {
+namespace
+{
+
+std::string resolveProjectPath( const std::filesystem::path& relativePath )
+{
+    if ( std::filesystem::exists( relativePath ) )
+    {
+        return relativePath.string();
+    }
+
+#ifdef ANGRY_MIPTS_SOURCE_DIR
+    const std::filesystem::path fromSourceDir =
+        std::filesystem::path( ANGRY_MIPTS_SOURCE_DIR ) / relativePath;
+    if ( std::filesystem::exists( fromSourceDir ) )
+    {
+        return fromSourceDir.string();
+    }
+#endif
+
+    return relativePath.string();
+}
+
+}  // namespace
 
 WorldSnapshot GameScene::make_mock_snapshot()
 {
@@ -70,14 +94,15 @@ GameScene::GameScene ( const sf::Font& font )
 
     try
     {
-        const LevelData level = level_loader_.load ( "levels/level_03.json" );
+        const std::string levelPath = resolveProjectPath( "levels/level_03.json" );
+        const LevelData level = level_loader_.load ( levelPath );
         physics_.loadLevel ( level );
         snapshot_ = physics_.getSnapshot();
-        Logger::info ( "Loaded level {} for GameScene", level.meta.id );
+        Logger::info ( "Loaded level {} for GameScene from {}", level.meta.id, levelPath );
     }
     catch ( const std::exception& error )
     {
-        Logger::error ( "Failed to load level_01.json: {}", error.what() );
+        Logger::error ( "Failed to load level_03.json: {}", error.what() );
     }
 }
 

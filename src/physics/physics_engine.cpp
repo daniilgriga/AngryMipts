@@ -267,14 +267,14 @@ void PhysicsEngine::createGround(float topYpx)
     const b2BodyId groundBodyId = b2CreateBody(worldId_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.material.friction = 0.9f;
-    shapeDef.material.restitution = 0.05f;
+    shapeDef.friction = 0.9f;
+    shapeDef.restitution = 0.05f;
 
     const float halfWidthM = 1400.0f / PIXELS_PER_METER;
     const float halfHeightM = 20.0f / PIXELS_PER_METER;
     const float centerYpx = topYpx + (halfHeightM * PIXELS_PER_METER);
     const b2Vec2 centerM = b2Vec2{640.0f / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
-    const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, b2MakeRot(0.0f));
+    const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, 0.0f);
 
     b2CreatePolygonShape(groundBodyId, &shapeDef, &groundPolygon);
 }
@@ -311,8 +311,8 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
-    shapeDef.material.friction = 0.7f;
-    shapeDef.material.restitution = 0.08f;
+    shapeDef.friction = 0.7f;
+    shapeDef.restitution = 0.08f;
 
     if (block.radiusPx > 0.0f)
     {
@@ -361,8 +361,8 @@ void PhysicsEngine::createTargetBody(const TargetData& target)
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
-    shapeDef.material.friction = 0.5f;
-    shapeDef.material.restitution = 0.15f;
+    shapeDef.friction = 0.5f;
+    shapeDef.restitution = 0.15f;
 
     b2Circle circle = {};
     circle.center = b2Vec2{0.0f, 0.0f};
@@ -409,8 +409,8 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = density;
-    shapeDef.material.friction = 0.4f;
-    shapeDef.material.restitution = 0.2f;
+    shapeDef.friction = 0.4f;
+    shapeDef.restitution = 0.2f;
 
     b2Circle circle = {};
     circle.center = b2Vec2{0.0f, 0.0f};

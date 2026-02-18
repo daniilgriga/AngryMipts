@@ -4,14 +4,42 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <filesystem>
 #include <iostream>
+#include <string>
+
+namespace
+{
+
+std::string resolveProjectPath( const std::filesystem::path& relativePath )
+{
+    if ( std::filesystem::exists( relativePath ) )
+    {
+        return relativePath.string();
+    }
+
+#ifdef ANGRY_MIPTS_SOURCE_DIR
+    const std::filesystem::path fromSourceDir =
+        std::filesystem::path( ANGRY_MIPTS_SOURCE_DIR ) / relativePath;
+    if ( std::filesystem::exists( fromSourceDir ) )
+    {
+        return fromSourceDir.string();
+    }
+#endif
+
+    return relativePath.string();
+}
+
+}  // namespace
 
 int main()
 {
+    const std::string fontPath = resolveProjectPath( "assets/fonts/liberation_sans.ttf" );
+
     sf::Font font;
-    if ( !font.openFromFile ( "assets/fonts/liberation_sans.ttf" ) )
+    if ( !font.openFromFile ( fontPath ) )
     {
-        std::cerr << "Failed to load font" << std::endl;
+        std::cerr << "Failed to load font from: " << fontPath << std::endl;
         return 1;
     }
 

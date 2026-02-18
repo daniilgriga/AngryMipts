@@ -10,19 +10,37 @@ include(FetchContent)
 
 find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 
-find_package(box2d CONFIG QUIET)
+find_package(box2d 3 CONFIG QUIET)
 if(box2d_FOUND)
     set(ANGRY_BOX2D_TARGET box2d::box2d)
     message(STATUS "Found box2d package")
 else()
-    message(STATUS "box2d package not found, fetching from GitHub")
-    FetchContent_Declare(
-        box2d
-        GIT_REPOSITORY https://github.com/erincatto/box2d.git
-        GIT_TAG v2.4.1
-    )
-    FetchContent_MakeAvailable(box2d)
-    set(ANGRY_BOX2D_TARGET box2d)
+    # AngryMipts uses only the physics library, so keep optional Box2D extras off.
+    set(BOX2D_UNIT_TESTS OFF CACHE BOOL "Disable Box2D unit tests" FORCE)
+    set(BOX2D_SAMPLES OFF CACHE BOOL "Disable Box2D samples" FORCE)
+    set(BOX2D_BENCHMARKS OFF CACHE BOOL "Disable Box2D benchmarks" FORCE)
+    set(BOX2D_DOCS OFF CACHE BOOL "Disable Box2D docs" FORCE)
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/box2d/CMakeLists.txt")
+        message(STATUS "box2d v3 package not found, using vendored external/box2d")
+        add_subdirectory(external/box2d)
+    else()
+        message(STATUS "box2d v3 package not found, fetching from GitHub")
+        FetchContent_Declare(
+            box2d
+            GIT_REPOSITORY https://github.com/erincatto/box2d.git
+            GIT_TAG v3.0.0
+        )
+        FetchContent_MakeAvailable(box2d)
+    endif()
+
+    if(TARGET box2d::box2d)
+        set(ANGRY_BOX2D_TARGET box2d::box2d)
+    elseif(TARGET box2d)
+        set(ANGRY_BOX2D_TARGET box2d)
+    else()
+        message(FATAL_ERROR "Fetched box2d, but no usable CMake target was created")
+    endif()
 endif()
 
 find_package(nlohmann_json QUIET)
@@ -76,6 +94,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     SFML::Graphics
     SFML::Window
     SFML::System
+)
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ANGRY_MIPTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # Smoke test (C)
