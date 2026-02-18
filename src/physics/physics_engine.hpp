@@ -69,6 +69,7 @@ private:
 
     int nextProjectileIndex_ = 0;
     b2BodyId activeProjectileBodyId_ = b2_nullBodyId;
+    int activeProjectileSettledFrames_ = 0;
 };
 
 }  // namespace angry
