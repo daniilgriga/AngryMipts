@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <unordered_map>
 #include <type_traits>
 #include <utility>
 
@@ -20,6 +21,8 @@ constexpr float kSlingshotForkYOffsetPx = 60.0f;
 constexpr float kProjectileSleepLinearSpeedMps = 0.6f;
 constexpr float kProjectileSleepAngularSpeedRad = 1.2f;
 constexpr int kProjectileSettledFramesNeeded = 15;
+constexpr float kDamageMinSpeedMps = 1.0f;
+constexpr float kDamageScale = 16.0f;
 
 inline float clampValue(float value, float minVal, float maxVal)
 {
@@ -137,6 +140,7 @@ void PhysicsEngine::processCommands(ThreadSafeQueue<Command>& cmdQueue)
 void PhysicsEngine::step(float dt)
 {
     const auto start = std::chrono::steady_clock::now();
+    const LevelStatus statusBeforeStep = snapshot_.status;
 
     if (!levelLoaded_ || B2_IS_NULL(worldId_))
     {
@@ -158,6 +162,111 @@ void PhysicsEngine::step(float dt)
 
     const float clampedDt = clampValue(dt, 0.0f, 1.0f / 30.0f);
     b2World_Step(worldId_, clampedDt, 4);
+
+    // Apply damage from contact hit events and remove destroyed bodies.
+    const b2ContactEvents contactEvents = b2World_GetContactEvents(worldId_);
+    std::unordered_map<EntityId, float> pendingDamageById;
+    for (int i = 0; i < contactEvents.hitCount; ++i)
+    {
+        const b2ContactHitEvent& hit = contactEvents.hitEvents[static_cast<size_t>(i)];
+        const b2BodyId bodyA = b2Shape_GetBody(hit.shapeIdA);
+        const b2BodyId bodyB = b2Shape_GetBody(hit.shapeIdB);
+        BodyBinding* bindingA = findBinding(bodyA);
+        BodyBinding* bindingB = findBinding(bodyB);
+        if (bindingA == nullptr || bindingB == nullptr)
+        {
+            continue;
+        }
+
+        events_.push_back(CollisionEvent{
+            bindingA->id,
+            bindingB->id,
+            hit.approachSpeed,
+            worldToPx({hit.point.x, hit.point.y})});
+
+        const float effectiveSpeed = std::max(0.0f, hit.approachSpeed - kDamageMinSpeedMps);
+        if (effectiveSpeed <= 0.0f)
+        {
+            continue;
+        }
+
+        const float damage = effectiveSpeed * kDamageScale;
+        if (bindingA->kind == ObjectSnapshot::Kind::Block || bindingA->kind == ObjectSnapshot::Kind::Target)
+        {
+            pendingDamageById[bindingA->id] += damage;
+        }
+        if (bindingB->kind == ObjectSnapshot::Kind::Block || bindingB->kind == ObjectSnapshot::Kind::Target)
+        {
+            pendingDamageById[bindingB->id] += damage;
+        }
+    }
+
+    std::vector<EntityId> destroyedIds;
+    for (BodyBinding& binding : bodies_)
+    {
+        if (binding.kind != ObjectSnapshot::Kind::Block && binding.kind != ObjectSnapshot::Kind::Target)
+        {
+            continue;
+        }
+
+        const auto damageIt = pendingDamageById.find(binding.id);
+        if (damageIt == pendingDamageById.end())
+        {
+            continue;
+        }
+
+        binding.hp -= damageIt->second;
+        if (binding.hp <= 0.0f)
+        {
+            destroyedIds.push_back(binding.id);
+        }
+    }
+
+    for (const EntityId destroyedId : destroyedIds)
+    {
+        const auto it = std::find_if(
+            bodies_.begin(),
+            bodies_.end(),
+            [destroyedId](const BodyBinding& b)
+            {
+                return b.id == destroyedId;
+            });
+        if (it == bodies_.end())
+        {
+            continue;
+        }
+
+        const bool isTarget = it->kind == ObjectSnapshot::Kind::Target;
+        const int scoreAwarded = isTarget ? it->scoreValue : 0;
+        const Vec2 eventPositionPx = it->bodyId.index1 != 0
+            ? worldToPx({b2Body_GetPosition(it->bodyId).x, b2Body_GetPosition(it->bodyId).y})
+            : it->lastPositionPx;
+
+        events_.push_back(DestroyedEvent{
+            it->id,
+            eventPositionPx,
+            it->material});
+
+        if (isTarget)
+        {
+            snapshot_.score += scoreAwarded;
+            events_.push_back(TargetHitEvent{it->id, scoreAwarded});
+            events_.push_back(ScoreChangedEvent{snapshot_.score});
+        }
+
+        if (it->bodyId.index1 != 0)
+        {
+            if (bodyIdEquals(it->bodyId, activeProjectileBodyId_))
+            {
+                activeProjectileBodyId_ = b2_nullBodyId;
+                activeProjectileSettledFrames_ = 0;
+                tryPrepareNextProjectile();
+            }
+            destroyBody(it->bodyId);
+        }
+
+        bodies_.erase(it);
+    }
 
     if (B2_IS_NON_NULL(activeProjectileBodyId_))
     {
@@ -238,6 +347,27 @@ void PhysicsEngine::step(float dt)
     }
 
     updateLevelStatus();
+    if (statusBeforeStep != snapshot_.status
+        && (snapshot_.status == LevelStatus::Win || snapshot_.status == LevelStatus::Lose))
+    {
+        int stars = 0;
+        if (snapshot_.status == LevelStatus::Win)
+        {
+            stars = snapshot_.score >= currentLevel_.meta.star3Threshold
+                ? 3
+                : snapshot_.score >= currentLevel_.meta.star2Threshold
+                    ? 2
+                    : snapshot_.score >= currentLevel_.meta.star1Threshold
+                        ? 1
+                        : 0;
+        }
+
+        snapshot_.stars = stars;
+        events_.push_back(LevelCompletedEvent{
+            snapshot_.status == LevelStatus::Win,
+            snapshot_.score,
+            stars});
+    }
     refreshSnapshot();
 
     const auto end = std::chrono::steady_clock::now();
@@ -337,14 +467,14 @@ void PhysicsEngine::createGround(float topYpx)
     const b2BodyId groundBodyId = b2CreateBody(worldId_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.friction = 0.9f;
-    shapeDef.restitution = 0.05f;
+    shapeDef.material.friction = 0.9f;
+    shapeDef.material.restitution = 0.05f;
 
     const float halfWidthM = 1400.0f / PIXELS_PER_METER;
     const float halfHeightM = 20.0f / PIXELS_PER_METER;
     const float centerYpx = topYpx + (halfHeightM * PIXELS_PER_METER);
     const b2Vec2 centerM = b2Vec2{640.0f / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
-    const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, 0.0f);
+    const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, b2MakeRot(0.0f));
 
     b2CreatePolygonShape(groundBodyId, &shapeDef, &groundPolygon);
 
@@ -358,15 +488,13 @@ void PhysicsEngine::createGround(float topYpx)
     const b2Polygon leftWall = b2MakeOffsetBox(
         wallHalfWidthM,
         wallHalfHeightM,
-        b2Vec2{leftWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER},
-        0.0f);
+        b2Vec2{leftWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER}, b2MakeRot(0.0f));
     b2CreatePolygonShape(groundBodyId, &shapeDef, &leftWall);
 
     const b2Polygon rightWall = b2MakeOffsetBox(
         wallHalfWidthM,
         wallHalfHeightM,
-        b2Vec2{rightWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER},
-        0.0f);
+        b2Vec2{rightWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER}, b2MakeRot(0.0f));
     b2CreatePolygonShape(groundBodyId, &shapeDef, &rightWall);
 
     const float ceilingHalfHeightM = 20.0f / PIXELS_PER_METER;
@@ -374,8 +502,7 @@ void PhysicsEngine::createGround(float topYpx)
     const b2Polygon ceiling = b2MakeOffsetBox(
         halfWidthM,
         ceilingHalfHeightM,
-        b2Vec2{640.0f / PIXELS_PER_METER, ceilingCenterYPx / PIXELS_PER_METER},
-        0.0f);
+        b2Vec2{640.0f / PIXELS_PER_METER, ceilingCenterYPx / PIXELS_PER_METER}, b2MakeRot(0.0f));
     b2CreatePolygonShape(groundBodyId, &shapeDef, &ceiling);
 }
 
@@ -411,8 +538,9 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
-    shapeDef.friction = 0.7f;
-    shapeDef.restitution = 0.08f;
+    shapeDef.material.friction = 0.7f;
+    shapeDef.material.restitution = 0.08f;
+    shapeDef.enableHitEvents = true;
 
     if (block.radiusPx > 0.0f)
     {
@@ -461,8 +589,9 @@ void PhysicsEngine::createTargetBody(const TargetData& target)
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
-    shapeDef.friction = 0.5f;
-    shapeDef.restitution = 0.15f;
+    shapeDef.material.friction = 0.5f;
+    shapeDef.material.restitution = 0.15f;
+    shapeDef.enableHitEvents = true;
 
     b2Circle circle = {};
     circle.center = b2Vec2{0.0f, 0.0f};
@@ -511,8 +640,9 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = density;
-    shapeDef.friction = 0.35f;
-    shapeDef.restitution = 0.05f;
+    shapeDef.material.friction = 0.35f;
+    shapeDef.material.restitution = 0.05f;
+    shapeDef.enableHitEvents = true;
 
     b2Circle circle = {};
     circle.center = b2Vec2{0.0f, 0.0f};
