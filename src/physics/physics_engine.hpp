@@ -42,6 +42,8 @@ private:
         int scoreValue = 0;
         Vec2 lastPositionPx{};
         float lastAngleDeg = 0.0f;
+        int settledFrames = 0;
+        float settledTimeSec = 0.0f;
     };
 
     void applyCommand(const Command& cmd);

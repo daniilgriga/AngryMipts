@@ -24,6 +24,7 @@ constexpr int kProjectileSettledFramesNeeded = 15;
 constexpr float kProjectileSettledRemoveDelaySec = 1.5f;
 constexpr float kDamageMinSpeedMps = 1.0f;
 constexpr float kDamageScale = 16.0f;
+constexpr float kBlockVsBlockDamageMultiplier = 0.15f;
 
 inline float clampValue(float value, float minVal, float maxVal)
 {
@@ -67,6 +68,54 @@ inline float materialDamageMultiplier(Material material)
     }
 
     return 1.0f;
+}
+
+inline bool isDestructibleKind(ObjectSnapshot::Kind kind)
+{
+    return kind == ObjectSnapshot::Kind::Block || kind == ObjectSnapshot::Kind::Target;
+}
+
+inline bool isBodyOnSurface(b2BodyId bodyId)
+{
+    const int contactCapacity = b2Body_GetContactCapacity(bodyId);
+    if (contactCapacity <= 0)
+    {
+        return false;
+    }
+
+    std::vector<b2ContactData> contacts(static_cast<size_t>(contactCapacity));
+    const int contactCount = b2Body_GetContactData(bodyId, contacts.data(), contactCapacity);
+    for (int i = 0; i < contactCount; ++i)
+    {
+        if (contacts[static_cast<size_t>(i)].manifold.pointCount > 0)
+        {
+            const b2Vec2 n = contacts[static_cast<size_t>(i)].manifold.normal;
+            if (std::abs(n.y) > 0.5f)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+inline void applySurfaceDamping(b2BodyId bodyId, float linearFactor, float angularFactor)
+{
+    b2Vec2 linearVel = b2Body_GetLinearVelocity(bodyId);
+    linearVel.x *= linearFactor;
+    if (std::abs(linearVel.x) < 0.05f)
+    {
+        linearVel.x = 0.0f;
+    }
+    b2Body_SetLinearVelocity(bodyId, linearVel);
+
+    float angularVel = b2Body_GetAngularVelocity(bodyId) * angularFactor;
+    if (std::abs(angularVel) < 0.05f)
+    {
+        angularVel = 0.0f;
+    }
+    b2Body_SetAngularVelocity(bodyId, angularVel);
 }
 
 }  // namespace
@@ -229,19 +278,37 @@ void PhysicsEngine::step(float dt)
         }
 
         const float baseDamage = effectiveSpeed * kDamageScale;
-        auto applyDamageByMaterial = [&pendingDamageById, baseDamage](const BodyBinding* binding)
-        {
-            if (binding->kind != ObjectSnapshot::Kind::Block && binding->kind != ObjectSnapshot::Kind::Target)
-            {
-                return;
-            }
+        const bool aIsProjectile = bindingA->kind == ObjectSnapshot::Kind::Projectile;
+        const bool bIsProjectile = bindingB->kind == ObjectSnapshot::Kind::Projectile;
+        const bool aIsDestructible = isDestructibleKind(bindingA->kind);
+        const bool bIsDestructible = isDestructibleKind(bindingB->kind);
 
-            const float scaledDamage = baseDamage * materialDamageMultiplier(binding->material);
+        auto applyScaledDamage = [&pendingDamageById](const BodyBinding* binding, float damage)
+        {
+            const float scaledDamage = damage * materialDamageMultiplier(binding->material);
             pendingDamageById[binding->id] += scaledDamage;
         };
 
-        applyDamageByMaterial(bindingA);
-        applyDamageByMaterial(bindingB);
+        if (aIsProjectile && bIsDestructible)
+        {
+            applyScaledDamage(bindingB, baseDamage);
+            continue;
+        }
+        if (bIsProjectile && aIsDestructible)
+        {
+            applyScaledDamage(bindingA, baseDamage);
+            continue;
+        }
+        if (aIsProjectile && bIsProjectile)
+        {
+            continue;
+        }
+        if (aIsDestructible && bIsDestructible)
+        {
+            const float structuralDamage = baseDamage * kBlockVsBlockDamageMultiplier;
+            applyScaledDamage(bindingA, structuralDamage);
+            applyScaledDamage(bindingB, structuralDamage);
+        }
     }
 
     std::vector<EntityId> destroyedIds;
@@ -315,6 +382,100 @@ void PhysicsEngine::step(float dt)
         bodies_.erase(it);
     }
 
+    // Apply rolling slowdown to all dynamic gameplay bodies touching surfaces.
+    for (const BodyBinding& binding : bodies_)
+    {
+        if (B2_IS_NULL(binding.bodyId) || !b2Body_IsValid(binding.bodyId))
+        {
+            continue;
+        }
+        if (binding.kind != ObjectSnapshot::Kind::Block
+            && binding.kind != ObjectSnapshot::Kind::Target
+            && binding.kind != ObjectSnapshot::Kind::Projectile)
+        {
+            continue;
+        }
+        if (!b2Body_IsAwake(binding.bodyId) || !isBodyOnSurface(binding.bodyId))
+        {
+            continue;
+        }
+
+        if (binding.kind == ObjectSnapshot::Kind::Projectile)
+        {
+            applySurfaceDamping(binding.bodyId, 0.97f, 0.97f);
+        }
+        else
+        {
+            applySurfaceDamping(binding.bodyId, 0.94f, 0.94f);
+        }
+    }
+
+    // Cleanup for secondary projectiles (e.g. spawned by Splitter) that are not tracked as active.
+    std::vector<EntityId> settledSecondaryProjectileIds;
+    for (BodyBinding& binding : bodies_)
+    {
+        if (binding.kind != ObjectSnapshot::Kind::Projectile)
+        {
+            continue;
+        }
+        if (B2_IS_NULL(binding.bodyId) || !b2Body_IsValid(binding.bodyId))
+        {
+            continue;
+        }
+        if (bodyIdEquals(binding.bodyId, activeProjectileBodyId_))
+        {
+            continue;
+        }
+
+        const b2Vec2 worldPos = b2Body_GetPosition(binding.bodyId);
+        const Vec2 projectilePosPx = worldToPx({worldPos.x, worldPos.y});
+        const b2Vec2 linearVel = b2Body_GetLinearVelocity(binding.bodyId);
+        const float angularVel = b2Body_GetAngularVelocity(binding.bodyId);
+        const bool isAwake = b2Body_IsAwake(binding.bodyId);
+        const float linearSpeed = std::sqrt(linearVel.x * linearVel.x + linearVel.y * linearVel.y);
+        const bool settledNow = (!isAwake)
+            || (linearSpeed < kProjectileSleepLinearSpeedMps
+                && std::abs(angularVel) < kProjectileSleepAngularSpeedRad);
+
+        if (settledNow)
+        {
+            binding.settledFrames += 1;
+            binding.settledTimeSec += clampedDt;
+        }
+        else
+        {
+            binding.settledFrames = 0;
+            binding.settledTimeSec = 0.0f;
+        }
+
+        if (isOutOfBoundsPx(projectilePosPx)
+            || (binding.settledFrames >= kProjectileSettledFramesNeeded
+                && binding.settledTimeSec >= kProjectileSettledRemoveDelaySec))
+        {
+            settledSecondaryProjectileIds.push_back(binding.id);
+        }
+    }
+
+    for (const EntityId projectileId : settledSecondaryProjectileIds)
+    {
+        const auto it = std::find_if(
+            bodies_.begin(),
+            bodies_.end(),
+            [projectileId](const BodyBinding& b)
+            {
+                return b.id == projectileId;
+            });
+        if (it == bodies_.end())
+        {
+            continue;
+        }
+        if (B2_IS_NON_NULL(it->bodyId) && b2Body_IsValid(it->bodyId))
+        {
+            destroyBody(it->bodyId);
+        }
+        bodies_.erase(it);
+    }
+
     if (B2_IS_NON_NULL(activeProjectileBodyId_))
     {
         if (!b2Body_IsValid(activeProjectileBodyId_))
@@ -333,35 +494,6 @@ void PhysicsEngine::step(float dt)
             b2Vec2 linearVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
             float angularVel = b2Body_GetAngularVelocity(activeProjectileBodyId_);
             const bool isAwake = b2Body_IsAwake(activeProjectileBodyId_);
-
-            bool onSurface = false;
-            const int contactCapacity = b2Body_GetContactCapacity(activeProjectileBodyId_);
-            if (contactCapacity > 0)
-            {
-                std::vector<b2ContactData> contacts(static_cast<size_t>(contactCapacity));
-                const int contactCount =
-                    b2Body_GetContactData(activeProjectileBodyId_, contacts.data(), contactCapacity);
-                for (int i = 0; i < contactCount; ++i)
-                {
-                    if (contacts[static_cast<size_t>(i)].manifold.pointCount > 0)
-                    {
-                        const b2Vec2 n = contacts[static_cast<size_t>(i)].manifold.normal;
-                        if (std::abs(n.y) > 0.5f)
-                        {
-                            onSurface = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Keep free flight unaffected, but add noticeable rolling slowdown on surfaces.
-            if (onSurface)
-            {
-                linearVel.x *= 0.97f;
-                b2Body_SetLinearVelocity(activeProjectileBodyId_, linearVel);
-                b2Body_SetAngularVelocity(activeProjectileBodyId_, angularVel * 0.97f);
-            }
 
             linearVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
             angularVel = b2Body_GetAngularVelocity(activeProjectileBodyId_);
@@ -551,9 +683,11 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                     if (speedPx > 1.0f)
                     {
-                        constexpr float kSplitAngleRad = 0.21f;  // ~12 deg
+                        constexpr float kSplitAngleRad = 0.26f;  // ~15 deg
                         const Vec2 leftVelPx = rotatePxVector(velPx, -kSplitAngleRad);
                         const Vec2 rightVelPx = rotatePxVector(velPx, kSplitAngleRad);
+
+                        // Spawn split projectiles exactly at the parent position.
                         createProjectileBody(ProjectileType::Standard, posPx, leftVelPx);
                         createProjectileBody(ProjectileType::Standard, posPx, rightVelPx);
                         activeProjectileAbilityUsed_ = true;
