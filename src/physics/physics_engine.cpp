@@ -41,6 +41,16 @@ inline bool bodyIdEquals(b2BodyId a, b2BodyId b)
     return B2_ID_EQUALS(a, b);
 }
 
+inline Vec2 rotatePxVector(const Vec2& v, float angleRad)
+{
+    const float c = std::cos(angleRad);
+    const float s = std::sin(angleRad);
+    return {
+        v.x * c - v.y * s,
+        v.x * s + v.y * c,
+    };
+}
+
 }  // namespace
 
 PhysicsEngine::~PhysicsEngine()
@@ -74,6 +84,8 @@ void PhysicsEngine::loadLevel(const LevelData& level)
     nextProjectileIndex_ = 0;
     activeProjectileBodyId_ = b2_nullBodyId;
     activeProjectileSettledFrames_ = 0;
+    activeProjectileType_ = ProjectileType::Standard;
+    activeProjectileAbilityUsed_ = false;
     levelYOffsetPx_ = 0.0f;
     supportBottomPx_ = 0.0f;
     events_.clear();
@@ -93,7 +105,8 @@ void PhysicsEngine::loadLevel(const LevelData& level)
         ? ProjectileType::Standard
         : level.projectiles.front().type;
 
-    snapshot_.score = 0;
+    scoreSystem_.reset();
+    snapshot_.score = scoreSystem_.score();
     snapshot_.shotsRemaining = static_cast<int>(level.projectiles.size());
     snapshot_.totalShots = level.meta.totalShots > 0
         ? level.meta.totalShots
@@ -255,7 +268,8 @@ void PhysicsEngine::step(float dt)
 
         if (isTarget)
         {
-            snapshot_.score += scoreAwarded;
+            scoreSystem_.add(scoreAwarded);
+            snapshot_.score = scoreSystem_.score();
             events_.push_back(TargetHitEvent{it->id, scoreAwarded});
             events_.push_back(ScoreChangedEvent{snapshot_.score});
         }
@@ -266,6 +280,8 @@ void PhysicsEngine::step(float dt)
             {
                 activeProjectileBodyId_ = b2_nullBodyId;
                 activeProjectileSettledFrames_ = 0;
+                activeProjectileType_ = ProjectileType::Standard;
+                activeProjectileAbilityUsed_ = false;
                 tryPrepareNextProjectile();
             }
             destroyBody(it->bodyId);
@@ -280,6 +296,8 @@ void PhysicsEngine::step(float dt)
         {
             activeProjectileBodyId_ = b2_nullBodyId;
             activeProjectileSettledFrames_ = 0;
+            activeProjectileType_ = ProjectileType::Standard;
+            activeProjectileAbilityUsed_ = false;
             tryPrepareNextProjectile();
         }
         else
@@ -340,6 +358,8 @@ void PhysicsEngine::step(float dt)
                 destroyBody(activeProjectileBodyId_);
                 activeProjectileBodyId_ = b2_nullBodyId;
                 activeProjectileSettledFrames_ = 0;
+                activeProjectileType_ = ProjectileType::Standard;
+                activeProjectileAbilityUsed_ = false;
                 tryPrepareNextProjectile();
             }
             else if (activeProjectileSettledFrames_ >= kProjectileSettledFramesNeeded)
@@ -347,6 +367,8 @@ void PhysicsEngine::step(float dt)
                 destroyBody(activeProjectileBodyId_);
                 activeProjectileBodyId_ = b2_nullBodyId;
                 activeProjectileSettledFrames_ = 0;
+                activeProjectileType_ = ProjectileType::Standard;
+                activeProjectileAbilityUsed_ = false;
                 tryPrepareNextProjectile();
             }
         }
@@ -359,13 +381,10 @@ void PhysicsEngine::step(float dt)
         int stars = 0;
         if (snapshot_.status == LevelStatus::Win)
         {
-            stars = snapshot_.score >= currentLevel_.meta.star3Threshold
-                ? 3
-                : snapshot_.score >= currentLevel_.meta.star2Threshold
-                    ? 2
-                    : snapshot_.score >= currentLevel_.meta.star1Threshold
-                        ? 1
-                        : 0;
+            stars = scoreSystem_.starsFor(
+                currentLevel_.meta.star1Threshold,
+                currentLevel_.meta.star2Threshold,
+                currentLevel_.meta.star3Threshold);
         }
 
         snapshot_.stars = stars;
@@ -442,6 +461,8 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                 activeProjectileBodyId_ = projectileBodyId;
                 activeProjectileSettledFrames_ = 0;
+                activeProjectileType_ = snapshot_.slingshot.nextProjectile;
+                activeProjectileAbilityUsed_ = false;
                 nextProjectileIndex_++;
                 snapshot_.shotsRemaining = std::max(0, snapshot_.shotsRemaining - 1);
                 snapshot_.slingshot.canShoot = false;
@@ -454,7 +475,58 @@ void PhysicsEngine::applyCommand(const Command& cmd)
             }
             else if constexpr (std::is_same_v<T, ActivateAbilityCmd>)
             {
-                // v1 MVP: projectile abilities are not implemented yet.
+                if (B2_IS_NULL(activeProjectileBodyId_) || !b2Body_IsValid(activeProjectileBodyId_))
+                {
+                    return;
+                }
+
+                BodyBinding* projectile = findBinding(activeProjectileBodyId_);
+                if (projectile == nullptr)
+                {
+                    return;
+                }
+
+                if (concrete.projectileId != INVALID_ID && concrete.projectileId != projectile->id)
+                {
+                    return;
+                }
+
+                if (activeProjectileAbilityUsed_)
+                {
+                    return;
+                }
+
+                if (activeProjectileType_ == ProjectileType::Heavy)
+                {
+                    const b2Vec2 velocity = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+                    if (speed > 0.001f)
+                    {
+                        constexpr float kHeavyBoostMultiplier = 1.35f;
+                        b2Body_SetLinearVelocity(
+                            activeProjectileBodyId_,
+                            b2Vec2{velocity.x * kHeavyBoostMultiplier, velocity.y * kHeavyBoostMultiplier});
+                        activeProjectileAbilityUsed_ = true;
+                    }
+                }
+                else if (activeProjectileType_ == ProjectileType::Splitter)
+                {
+                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+                    const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
+                    const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
+
+                    if (speedPx > 1.0f)
+                    {
+                        constexpr float kSplitAngleRad = 0.21f;  // ~12 deg
+                        const Vec2 leftVelPx = rotatePxVector(velPx, -kSplitAngleRad);
+                        const Vec2 rightVelPx = rotatePxVector(velPx, kSplitAngleRad);
+                        createProjectileBody(ProjectileType::Standard, posPx, leftVelPx);
+                        createProjectileBody(ProjectileType::Standard, posPx, rightVelPx);
+                        activeProjectileAbilityUsed_ = true;
+                    }
+                }
             }
         },
         cmd);

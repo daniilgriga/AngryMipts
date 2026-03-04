@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../core/score_system.hpp"
 #include "../shared/command.hpp"
 #include "../shared/event.hpp"
 #include "../shared/level_data.hpp"
@@ -61,6 +62,7 @@ private:
     std::vector<BodyBinding> bodies_;
     std::vector<Event> events_;
     std::vector<Command> pendingCommands_;
+    ScoreSystem scoreSystem_;
     std::unordered_map<int, LevelData> levelRegistry_;
 
     LevelData currentLevel_{};
@@ -73,6 +75,8 @@ private:
     int nextProjectileIndex_ = 0;
     b2BodyId activeProjectileBodyId_ = b2_nullBodyId;
     int activeProjectileSettledFrames_ = 0;
+    ProjectileType activeProjectileType_ = ProjectileType::Standard;
+    bool activeProjectileAbilityUsed_ = false;
 };
 
 }  // namespace angry
