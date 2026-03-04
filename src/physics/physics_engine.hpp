@@ -75,6 +75,7 @@ private:
     int nextProjectileIndex_ = 0;
     b2BodyId activeProjectileBodyId_ = b2_nullBodyId;
     int activeProjectileSettledFrames_ = 0;
+    float activeProjectileSettledTimeSec_ = 0.0f;
     ProjectileType activeProjectileType_ = ProjectileType::Standard;
     bool activeProjectileAbilityUsed_ = false;
 };
