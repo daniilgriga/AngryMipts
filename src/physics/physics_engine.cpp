@@ -476,6 +476,13 @@ void PhysicsEngine::step(float dt)
         bodies_.erase(it);
     }
 
+    if (!settledSecondaryProjectileIds.empty()
+        && B2_IS_NULL(activeProjectileBodyId_)
+        && !hasAliveProjectiles())
+    {
+        tryPrepareNextProjectile();
+    }
+
     if (B2_IS_NON_NULL(activeProjectileBodyId_))
     {
         if (!b2Body_IsValid(activeProjectileBodyId_))
@@ -662,6 +669,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                 if (activeProjectileType_ == ProjectileType::Heavy)
                 {
+                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
                     const b2Vec2 velocity = b2Body_GetLinearVelocity(activeProjectileBodyId_);
                     const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
                     if (speed > 0.001f)
@@ -671,6 +679,10 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             activeProjectileBodyId_,
                             b2Vec2{velocity.x * kHeavyBoostMultiplier, velocity.y * kHeavyBoostMultiplier});
                         activeProjectileAbilityUsed_ = true;
+                        events_.push_back(AbilityActivatedEvent{
+                            projectile->id,
+                            activeProjectileType_,
+                            worldToPx({worldPos.x, worldPos.y})});
                     }
                 }
                 else if (activeProjectileType_ == ProjectileType::Splitter)
@@ -691,6 +703,10 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         createProjectileBody(ProjectileType::Splitter, posPx, leftVelPx);
                         createProjectileBody(ProjectileType::Splitter, posPx, rightVelPx);
                         activeProjectileAbilityUsed_ = true;
+                        events_.push_back(AbilityActivatedEvent{
+                            projectile->id,
+                            activeProjectileType_,
+                            posPx});
                     }
                 }
             }
@@ -953,7 +969,7 @@ void PhysicsEngine::updateLevelStatus()
         return;
     }
 
-    if (snapshot_.shotsRemaining == 0 && B2_IS_NULL(activeProjectileBodyId_))
+    if (snapshot_.shotsRemaining == 0 && !hasAliveProjectiles())
     {
         snapshot_.status = LevelStatus::Lose;
     }
@@ -1003,12 +1019,31 @@ void PhysicsEngine::refreshSnapshot()
 
 void PhysicsEngine::tryPrepareNextProjectile()
 {
-    snapshot_.slingshot.canShoot = nextProjectileIndex_ < static_cast<int>(currentLevel_.projectiles.size());
+    snapshot_.slingshot.canShoot =
+        nextProjectileIndex_ < static_cast<int>(currentLevel_.projectiles.size())
+        && !hasAliveProjectiles();
     if (snapshot_.slingshot.canShoot)
     {
         snapshot_.slingshot.nextProjectile = currentLevel_.projectiles[nextProjectileIndex_].type;
         events_.push_back(ProjectileReadyEvent{snapshot_.slingshot.nextProjectile, snapshot_.shotsRemaining});
     }
+}
+
+bool PhysicsEngine::hasAliveProjectiles() const
+{
+    for (const BodyBinding& binding : bodies_)
+    {
+        if (binding.kind != ObjectSnapshot::Kind::Projectile)
+        {
+            continue;
+        }
+        if (B2_IS_NON_NULL(binding.bodyId) && b2Body_IsValid(binding.bodyId))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 Vec2 PhysicsEngine::computeLaunchVelocityPx(const Vec2& pullVectorPx) const

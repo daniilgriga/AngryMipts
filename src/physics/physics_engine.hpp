@@ -56,6 +56,7 @@ private:
     void updateLevelStatus();
     void refreshSnapshot();
     void tryPrepareNextProjectile();
+    bool hasAliveProjectiles() const;
     Vec2 computeLaunchVelocityPx(const Vec2& pullVectorPx) const;
     BodyBinding* findBinding(b2BodyId bodyId);
 

@@ -45,7 +45,14 @@ struct ProjectileReadyEvent
     int shotsRemaining;
 };
 
+struct AbilityActivatedEvent
+{
+    EntityId projectileId;
+    ProjectileType projectileType;
+    Vec2 positionPx;
+};
+
 using Event = std::variant<CollisionEvent, DestroyedEvent, TargetHitEvent, ScoreChangedEvent,
-                           LevelCompletedEvent, ProjectileReadyEvent>;
+                           LevelCompletedEvent, ProjectileReadyEvent, AbilityActivatedEvent>;
 
 }  // namespace angry
