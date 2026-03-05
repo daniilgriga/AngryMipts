@@ -16,8 +16,9 @@ constexpr unsigned kSampleRate = 44100;
 
 SfxPlayer::SfxPlayer()
 {
-    heavy_ability_ = make_chirp ( 0.18f, 230.f, 95.f, 0.18f, 0.85f, 1.85f );
+    dasher_ability_ = make_chirp ( 0.18f, 230.f, 95.f, 0.18f, 0.85f, 1.85f );
     splitter_ability_ = make_chirp ( 0.16f, 520.f, 810.f, 0.10f, 0.75f, 1.45f );
+    boomerang_ability_ = make_chirp ( 0.20f, 340.f, 520.f, 0.20f, 0.82f, 1.65f );
     bomber_ability_ = make_chirp ( 0.22f, 140.f, 58.f, 0.52f, 0.92f, 2.25f );
     dropper_ability_ = make_chirp ( 0.19f, 380.f, 132.f, 0.24f, 0.82f, 1.75f );
     generic_ability_ = make_chirp ( 0.14f, 320.f, 470.f, 0.12f, 0.68f, 1.35f );
@@ -89,11 +90,14 @@ void SfxPlayer::play_ability ( ProjectileType projectile_type )
 {
     switch ( projectile_type )
     {
-    case ProjectileType::Heavy:
-        play ( heavy_ability_, 58.f, 0.96f );
+    case ProjectileType::Dasher:
+        play ( dasher_ability_, 58.f, 0.96f );
         break;
     case ProjectileType::Splitter:
         play ( splitter_ability_, 56.f, 1.06f );
+        break;
+    case ProjectileType::Boomerang:
+        play ( boomerang_ability_, 57.f, 0.98f );
         break;
     case ProjectileType::Bomber:
         play ( bomber_ability_, 64.f, 0.90f );
@@ -101,8 +105,7 @@ void SfxPlayer::play_ability ( ProjectileType projectile_type )
     case ProjectileType::Dropper:
         play ( dropper_ability_, 59.f, 0.94f );
         break;
-    case ProjectileType::Dasher:
-    case ProjectileType::Boomerang:
+    case ProjectileType::Heavy:
     case ProjectileType::Bubbler:
     case ProjectileType::Inflater:
         play ( generic_ability_, 50.f, 1.05f );

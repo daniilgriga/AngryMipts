@@ -13,8 +13,9 @@ namespace angry
 class SfxPlayer
 {
 private:
-    sf::SoundBuffer heavy_ability_;
+    sf::SoundBuffer dasher_ability_;
     sf::SoundBuffer splitter_ability_;
+    sf::SoundBuffer boomerang_ability_;
     sf::SoundBuffer bomber_ability_;
     sf::SoundBuffer dropper_ability_;
     sf::SoundBuffer generic_ability_;

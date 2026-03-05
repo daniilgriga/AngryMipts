@@ -892,6 +892,16 @@ void GameScene::process_events()
                         particles_.emit ( pos + sf::Vector2f ( 0.f, 16.f ), 12, core,
                                           106.f, 0.42f, 3.9f );
                     }
+                    else if ( e.projectileType == ProjectileType::Boomerang )
+                    {
+                        particles_.emit_ring ( pos, 14, glow, 164.f, 0.24f, 3.9f );
+                        particles_.emit_shards ( pos, 10, core, 188.f, 0.36f, 3.1f, 860.f );
+                    }
+                    else if ( e.projectileType == ProjectileType::Dasher )
+                    {
+                        particles_.emit_ring ( pos, 10, glow, 208.f, 0.18f, 3.0f );
+                        particles_.emit ( pos, 12, core, 194.f, 0.22f, 3.4f );
+                    }
 
                     shake_time_ = std::max ( shake_time_, cfg.shakeTime );
                     shake_strength_ = std::max ( shake_strength_, cfg.shakeStrength );
