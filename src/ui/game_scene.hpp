@@ -39,8 +39,14 @@ private:
     sf::View game_view_;
     sf::RenderWindow* window_ptr_ = nullptr;
     sf::RenderTexture world_pass_;
+    sf::RenderTexture bloom_extract_pass_;
+    sf::RenderTexture bloom_ping_pass_;
+    sf::RenderTexture bloom_pong_pass_;
     sf::Shader post_shader_;
+    sf::Shader bloom_extract_shader_;
+    sf::Shader bloom_blur_shader_;
     bool post_shader_ready_ = false;
+    bool bloom_ready_ = false;
     float impact_flash_ = 0.f;
     sf::Clock visual_clock_;
     float shake_time_ = 0.f;

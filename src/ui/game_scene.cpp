@@ -45,6 +45,38 @@ void main()
 }
 )GLSL";
 
+constexpr auto kBloomExtractFragmentShader = R"GLSL(
+uniform sampler2D texture;
+uniform float uThreshold;
+
+void main()
+{
+    vec2 uv = gl_TexCoord[0].xy;
+    vec4 color = texture2D(texture, uv);
+    float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float t = clamp((luma - uThreshold) / (1.0 - uThreshold), 0.0, 1.0);
+    t = t * t;
+    gl_FragColor = vec4(color.rgb * t, color.a * t);
+}
+)GLSL";
+
+constexpr auto kBloomBlurFragmentShader = R"GLSL(
+uniform sampler2D texture;
+uniform vec2 uTexel;
+uniform vec2 uDirection;
+
+void main()
+{
+    vec2 uv = gl_TexCoord[0].xy;
+    vec3 sum = texture2D(texture, uv).rgb * 0.227027;
+    sum += texture2D(texture, uv + uDirection * uTexel * 1.384615).rgb * 0.316216;
+    sum += texture2D(texture, uv - uDirection * uTexel * 1.384615).rgb * 0.316216;
+    sum += texture2D(texture, uv + uDirection * uTexel * 3.230769).rgb * 0.070270;
+    sum += texture2D(texture, uv - uDirection * uTexel * 3.230769).rgb * 0.070270;
+    gl_FragColor = vec4(sum, 1.0);
+}
+)GLSL";
+
 void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
 {
     if ( window_size.x == 0 || window_size.y == 0 )
@@ -188,6 +220,22 @@ GameScene::GameScene ( const sf::Font& font )
         else
         {
             Logger::error ( "GameScene: failed to load post-processing shader" );
+        }
+
+        bloom_ready_ = bloom_extract_shader_.loadFromMemory (
+                           kBloomExtractFragmentShader, sf::Shader::Type::Fragment )
+                       && bloom_blur_shader_.loadFromMemory (
+                           kBloomBlurFragmentShader, sf::Shader::Type::Fragment );
+
+        if ( bloom_ready_ )
+        {
+            bloom_extract_shader_.setUniform ( "texture", sf::Shader::CurrentTexture );
+            bloom_extract_shader_.setUniform ( "uThreshold", 0.58f );
+            bloom_blur_shader_.setUniform ( "texture", sf::Shader::CurrentTexture );
+        }
+        else
+        {
+            Logger::error ( "GameScene: failed to load bloom shaders, bloom disabled" );
         }
     }
     else
@@ -385,6 +433,24 @@ void GameScene::render ( sf::RenderWindow& window )
             Logger::error ( "GameScene: failed to resize world render target" );
         }
         world_pass_.setSmooth ( true );
+
+        if ( bloom_ready_ )
+        {
+            const bool bloom_ok = bloom_extract_pass_.resize ( window.getSize() )
+                                  && bloom_ping_pass_.resize ( window.getSize() )
+                                  && bloom_pong_pass_.resize ( window.getSize() );
+            if ( !bloom_ok )
+            {
+                Logger::error ( "GameScene: failed to resize bloom render targets, bloom disabled" );
+                bloom_ready_ = false;
+            }
+            else
+            {
+                bloom_extract_pass_.setSmooth ( true );
+                bloom_ping_pass_.setSmooth ( true );
+                bloom_pong_pass_.setSmooth ( true );
+            }
+        }
     }
 
     // World rendering in game coordinates
@@ -402,6 +468,36 @@ void GameScene::render ( sf::RenderWindow& window )
     particles_.render ( world_pass_ );
     world_pass_.display();
 
+    if ( bloom_ready_ )
+    {
+        const sf::Vector2u bloom_size = bloom_extract_pass_.getSize();
+        const float texel_x = 1.f / static_cast<float> ( std::max ( 1u, bloom_size.x ) );
+        const float texel_y = 1.f / static_cast<float> ( std::max ( 1u, bloom_size.y ) );
+
+        bloom_extract_pass_.clear ( sf::Color::Transparent );
+        sf::Sprite extract_source ( world_pass_.getTexture() );
+        sf::RenderStates extract_states;
+        extract_states.shader = &bloom_extract_shader_;
+        bloom_extract_pass_.draw ( extract_source, extract_states );
+        bloom_extract_pass_.display();
+
+        bloom_blur_shader_.setUniform ( "uTexel", sf::Glsl::Vec2 ( texel_x, texel_y ) );
+
+        bloom_ping_pass_.clear ( sf::Color::Transparent );
+        sf::Sprite blur_h_source ( bloom_extract_pass_.getTexture() );
+        bloom_blur_shader_.setUniform ( "uDirection", sf::Glsl::Vec2 ( 1.f, 0.f ) );
+        sf::RenderStates blur_states;
+        blur_states.shader = &bloom_blur_shader_;
+        bloom_ping_pass_.draw ( blur_h_source, blur_states );
+        bloom_ping_pass_.display();
+
+        bloom_pong_pass_.clear ( sf::Color::Transparent );
+        sf::Sprite blur_v_source ( bloom_ping_pass_.getTexture() );
+        bloom_blur_shader_.setUniform ( "uDirection", sf::Glsl::Vec2 ( 0.f, 1.f ) );
+        bloom_pong_pass_.draw ( blur_v_source, blur_states );
+        bloom_pong_pass_.display();
+    }
+
     window.setView ( window.getDefaultView() );
     sf::Sprite world_sprite ( world_pass_.getTexture() );
 
@@ -417,6 +513,19 @@ void GameScene::render ( sf::RenderWindow& window )
     else
     {
         window.draw ( world_sprite );
+    }
+
+    if ( bloom_ready_ )
+    {
+        sf::Sprite bloom_sprite ( bloom_pong_pass_.getTexture() );
+        const float boosted_flash = std::clamp ( impact_flash_ * 2.0f, 0.f, 0.5f );
+        const uint8_t bloom_alpha =
+            static_cast<uint8_t> ( 132.f + boosted_flash * 180.f );
+        bloom_sprite.setColor ( sf::Color ( 255, 240, 214, bloom_alpha ) );
+
+        sf::RenderStates bloom_states;
+        bloom_states.blendMode = sf::BlendAdd;
+        window.draw ( bloom_sprite, bloom_states );
     }
 
     // HUD in screen coordinates
