@@ -709,6 +709,162 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             posPx});
                     }
                 }
+                else if (activeProjectileType_ == ProjectileType::Dropper)
+                {
+                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+                    const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
+                    const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
+
+                    const float droppedDownSpeedPx = std::max(speedPx * 1.35f, 700.0f);
+                    const Vec2 droppedVelPx = {
+                        velPx.x * 0.15f,
+                        droppedDownSpeedPx,
+                    };
+                    createProjectileBody(ProjectileType::Standard, posPx, droppedVelPx);
+
+                    Vec2 boostedParentVelPx = velPx;
+                    boostedParentVelPx.x *= 1.05f;
+                    boostedParentVelPx.y -= std::max(speedPx * 0.4f, 260.0f);
+                    const WorldVec2 boostedParentVelWorld = pxToWorld(boostedParentVelPx);
+                    b2Body_SetLinearVelocity(
+                        activeProjectileBodyId_,
+                        b2Vec2{boostedParentVelWorld.x, boostedParentVelWorld.y});
+
+                    activeProjectileAbilityUsed_ = true;
+                    events_.push_back(AbilityActivatedEvent{
+                        projectile->id,
+                        activeProjectileType_,
+                        posPx});
+                }
+                else if (activeProjectileType_ == ProjectileType::Bomber)
+                {
+                    constexpr float kExplosionRadiusPx = 90.0f;
+                    constexpr float kExplosionMaxDamage = 60.0f;
+                    constexpr float kExplosionImpulse = 5.0f;
+                    constexpr float kExplosionCloseRangeLimiter = 0.85f;
+
+                    const EntityId bomberId = projectile->id;
+                    const b2BodyId bomberBodyId = activeProjectileBodyId_;
+                    const b2Vec2 explosionCenterWorld = b2Body_GetPosition(bomberBodyId);
+                    const Vec2 explosionCenterPx =
+                        worldToPx({explosionCenterWorld.x, explosionCenterWorld.y});
+                    const float explosionRadiusWorld = kExplosionRadiusPx / PIXELS_PER_METER;
+
+                    std::vector<EntityId> destroyedByExplosionIds;
+                    for (BodyBinding& candidate : bodies_)
+                    {
+                        if (B2_IS_NULL(candidate.bodyId) || !b2Body_IsValid(candidate.bodyId))
+                        {
+                            continue;
+                        }
+                        if (bodyIdEquals(candidate.bodyId, bomberBodyId))
+                        {
+                            continue;
+                        }
+
+                        const b2Vec2 candidatePos = b2Body_GetPosition(candidate.bodyId);
+                        const float dx = candidatePos.x - explosionCenterWorld.x;
+                        const float dy = candidatePos.y - explosionCenterWorld.y;
+                        const float distance = std::sqrt(dx * dx + dy * dy);
+                        if (distance > explosionRadiusWorld)
+                        {
+                            continue;
+                        }
+
+                        const float rawFalloff = 1.0f - (distance / explosionRadiusWorld);
+                        const float falloff = clampValue(rawFalloff, 0.0f, kExplosionCloseRangeLimiter);
+                        const float safeDistance = std::max(distance, 0.0001f);
+                        const b2Vec2 dir = b2Vec2{dx / safeDistance, dy / safeDistance};
+                        b2Body_ApplyLinearImpulseToCenter(
+                            candidate.bodyId,
+                            b2Vec2{
+                                dir.x * kExplosionImpulse * falloff,
+                                dir.y * kExplosionImpulse * falloff},
+                            true);
+
+                        if (candidate.kind == ObjectSnapshot::Kind::Block
+                            || candidate.kind == ObjectSnapshot::Kind::Target)
+                        {
+                            const float damage =
+                                kExplosionMaxDamage * falloff * materialDamageMultiplier(candidate.material);
+                            candidate.hp -= damage;
+                            if (candidate.hp <= 0.0f)
+                            {
+                                destroyedByExplosionIds.push_back(candidate.id);
+                            }
+                        }
+                    }
+
+                    if (B2_IS_NON_NULL(bomberBodyId) && b2Body_IsValid(bomberBodyId))
+                    {
+                        destroyBody(bomberBodyId);
+                    }
+                    const auto bomberIt = std::find_if(
+                        bodies_.begin(),
+                        bodies_.end(),
+                        [bomberId](const BodyBinding& b)
+                        {
+                            return b.id == bomberId;
+                        });
+                    if (bomberIt != bodies_.end())
+                    {
+                        bodies_.erase(bomberIt);
+                    }
+
+                    for (const EntityId destroyedId : destroyedByExplosionIds)
+                    {
+                        const auto it = std::find_if(
+                            bodies_.begin(),
+                            bodies_.end(),
+                            [destroyedId](const BodyBinding& b)
+                            {
+                                return b.id == destroyedId;
+                            });
+                        if (it == bodies_.end())
+                        {
+                            continue;
+                        }
+
+                        const bool isTarget = it->kind == ObjectSnapshot::Kind::Target;
+                        const int scoreAwarded = isTarget ? it->scoreValue : 0;
+                        const Vec2 eventPositionPx = it->bodyId.index1 != 0
+                            ? worldToPx({b2Body_GetPosition(it->bodyId).x, b2Body_GetPosition(it->bodyId).y})
+                            : it->lastPositionPx;
+
+                        events_.push_back(DestroyedEvent{
+                            it->id,
+                            eventPositionPx,
+                            it->material});
+
+                        if (isTarget)
+                        {
+                            scoreSystem_.add(scoreAwarded);
+                            snapshot_.score = scoreSystem_.score();
+                            events_.push_back(TargetHitEvent{it->id, scoreAwarded});
+                            events_.push_back(ScoreChangedEvent{snapshot_.score});
+                        }
+
+                        if (it->bodyId.index1 != 0)
+                        {
+                            destroyBody(it->bodyId);
+                        }
+                        bodies_.erase(it);
+                    }
+
+                    activeProjectileBodyId_ = b2_nullBodyId;
+                    activeProjectileSettledFrames_ = 0;
+                    activeProjectileSettledTimeSec_ = 0.0f;
+                    activeProjectileType_ = ProjectileType::Standard;
+                    activeProjectileAbilityUsed_ = false;
+                    tryPrepareNextProjectile();
+
+                    events_.push_back(AbilityActivatedEvent{
+                        bomberId,
+                        ProjectileType::Bomber,
+                        explosionCenterPx});
+                }
             }
         },
         cmd);
@@ -887,6 +1043,16 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
     {
         radiusPx = 14.0f;
         density = 1.7f;
+    }
+    else if (type == ProjectileType::Bomber)
+    {
+        radiusPx = 13.0f;
+        density = 1.3f;
+    }
+    else if (type == ProjectileType::Dropper)
+    {
+        radiusPx = 13.0f;
+        density = 1.15f;
     }
 
     b2BodyDef bodyDef = b2DefaultBodyDef();
