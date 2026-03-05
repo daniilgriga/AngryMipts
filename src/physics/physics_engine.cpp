@@ -667,17 +667,17 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     return;
                 }
 
-                if (activeProjectileType_ == ProjectileType::Heavy)
+                if (activeProjectileType_ == ProjectileType::Dasher)
                 {
                     const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
                     const b2Vec2 velocity = b2Body_GetLinearVelocity(activeProjectileBodyId_);
                     const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
                     if (speed > 0.001f)
                     {
-                        constexpr float kHeavyBoostMultiplier = 1.35f;
+                        constexpr float kDasherBoostMultiplier = 1.35f;
                         b2Body_SetLinearVelocity(
                             activeProjectileBodyId_,
-                            b2Vec2{velocity.x * kHeavyBoostMultiplier, velocity.y * kHeavyBoostMultiplier});
+                            b2Vec2{velocity.x * kDasherBoostMultiplier, velocity.y * kDasherBoostMultiplier});
                         activeProjectileAbilityUsed_ = true;
                         events_.push_back(AbilityActivatedEvent{
                             projectile->id,
@@ -731,6 +731,62 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     b2Body_SetLinearVelocity(
                         activeProjectileBodyId_,
                         b2Vec2{boostedParentVelWorld.x, boostedParentVelWorld.y});
+
+                    activeProjectileAbilityUsed_ = true;
+                    events_.push_back(AbilityActivatedEvent{
+                        projectile->id,
+                        activeProjectileType_,
+                        posPx});
+                }
+                else if (activeProjectileType_ == ProjectileType::Boomerang)
+                {
+                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+                    const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
+                    const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
+                    const Vec2 aimPx = {
+                        snapshot_.slingshot.basePx.x,
+                        snapshot_.slingshot.basePx.y - 70.0f,
+                    };
+                    Vec2 toAimPx = {
+                        aimPx.x - posPx.x,
+                        aimPx.y - posPx.y,
+                    };
+                    const float toAimLen = std::sqrt(toAimPx.x * toAimPx.x + toAimPx.y * toAimPx.y);
+                    if (toAimLen > 0.001f)
+                    {
+                        toAimPx.x /= toAimLen;
+                        toAimPx.y /= toAimLen;
+                    }
+                    else
+                    {
+                        toAimPx = {-1.0f, -0.1f};
+                    }
+
+                    // Push boomerang direction lower to avoid overly horizontal return.
+                    toAimPx.y += 0.35f;
+                    const float biasedLen = std::sqrt(toAimPx.x * toAimPx.x + toAimPx.y * toAimPx.y);
+                    if (biasedLen > 0.001f)
+                    {
+                        toAimPx.x /= biasedLen;
+                        toAimPx.y /= biasedLen;
+                    }
+
+                    const float boomerangSpeedPx = std::max(speedPx * 1.35f, 650.0f);
+                    const Vec2 redirectedVelPx = {
+                        toAimPx.x * boomerangSpeedPx,
+                        toAimPx.y * boomerangSpeedPx,
+                    };
+                    const WorldVec2 redirectedVelWorld = pxToWorld(redirectedVelPx);
+                    b2Body_SetLinearVelocity(
+                        activeProjectileBodyId_,
+                        b2Vec2{redirectedVelWorld.x, redirectedVelWorld.y});
+
+                    const float cross =
+                        velPx.x * redirectedVelPx.y - velPx.y * redirectedVelPx.x;
+                    const float spinSign = cross >= 0.0f ? 1.0f : -1.0f;
+                    b2Body_SetAngularVelocity(activeProjectileBodyId_, 18.0f * spinSign);
 
                     activeProjectileAbilityUsed_ = true;
                     events_.push_back(AbilityActivatedEvent{
@@ -1039,7 +1095,7 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
 
     float radiusPx = 12.0f;
     float density = 1.0f;
-    if (type == ProjectileType::Heavy)
+    if (type == ProjectileType::Dasher)
     {
         radiusPx = 14.0f;
         density = 1.7f;
@@ -1053,6 +1109,11 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
     {
         radiusPx = 13.0f;
         density = 1.15f;
+    }
+    else if (type == ProjectileType::Boomerang)
+    {
+        radiusPx = 12.0f;
+        density = 0.95f;
     }
 
     b2BodyDef bodyDef = b2DefaultBodyDef();
