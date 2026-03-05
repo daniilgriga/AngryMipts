@@ -11,6 +11,8 @@
 #include "ui/result_scene.hpp"
 #include "ui/slingshot.hpp"
 
+#include <random>
+
 namespace angry
 {
 
@@ -34,6 +36,12 @@ private:
     int level_id_ = -1;
     std::string scores_path_;
     LevelMeta current_meta_;
+    sf::View game_view_;
+    sf::RenderWindow* window_ptr_ = nullptr;
+    float shake_time_ = 0.f;
+    float shake_strength_ = 0.f;
+    std::mt19937 rng_ {std::random_device {} ()};
+    std::uniform_real_distribution<float> shake_dist_ {-1.f, 1.f};
 
     static WorldSnapshot make_mock_snapshot();
     void finish_level();

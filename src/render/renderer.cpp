@@ -5,6 +5,18 @@
 
 namespace angry
 {
+namespace
+{
+
+constexpr float kWorldW = 1920.f;
+constexpr float kWorldH = 1080.f;
+constexpr float kGroundY = 700.f;
+
+}  // namespace
+
+void draw_hill ( sf::RenderWindow& window, float cx, float base_y,
+                 float width, float height, sf::Color color );
+void draw_cloud ( sf::RenderWindow& window, float x, float y, float scale );
 
 void Renderer::draw_hud ( sf::RenderWindow& window, const WorldSnapshot& snapshot,
                           sf::Text& score_text )
@@ -28,7 +40,6 @@ void Renderer::draw_hud ( sf::RenderWindow& window, const WorldSnapshot& snapsho
 
         if ( i < remaining )
         {
-            // first remaining icon shows next projectile type
             if ( i == 0 && snapshot.slingshot.canShoot )
             {
                 icon.setFillColor ( projectile_color ( snapshot.slingshot.nextProjectile ) );
@@ -66,25 +77,131 @@ void Renderer::draw_snapshot ( sf::RenderWindow& window, const WorldSnapshot& sn
 
 void Renderer::draw_background ( sf::RenderWindow& window )
 {
-    const auto ws = sf::Vector2f ( window.getSize() );
+    // Sky gradient (top=deep blue, bottom=light blue)
+    sf::Vertex sky[] = {
+        {{0.f, 0.f}, sf::Color ( 70, 130, 200 )},
+        {{kWorldW, 0.f}, sf::Color ( 70, 130, 200 )},
+        {{kWorldW, kGroundY}, sf::Color ( 160, 210, 240 )},
+        {{0.f, kGroundY}, sf::Color ( 160, 210, 240 )},
+    };
+    window.draw ( sky, 4, sf::PrimitiveType::TriangleFan );
 
-    // grass strip at the bottom
-    sf::RectangleShape grass ( {ws.x, 40.f} );
-    grass.setPosition ( {0.f, ws.y - 40.f} );
-    grass.setFillColor ( sf::Color ( 80, 160, 60 ) );
+    // Distant hills (dark green silhouettes)
+    draw_hill ( window, 300.f, kGroundY, 400.f, 120.f, sf::Color ( 60, 100, 50, 180 ) );
+    draw_hill ( window, 800.f, kGroundY, 500.f, 90.f, sf::Color ( 50, 90, 45, 160 ) );
+    draw_hill ( window, 1400.f, kGroundY, 450.f, 110.f, sf::Color ( 55, 95, 48, 170 ) );
+
+    // Clouds
+    draw_cloud ( window, 250.f, 120.f, 1.2f );
+    draw_cloud ( window, 700.f, 80.f, 0.8f );
+    draw_cloud ( window, 1200.f, 150.f, 1.0f );
+    draw_cloud ( window, 1600.f, 100.f, 0.6f );
+
+    // Grass
+    sf::RectangleShape grass ( {kWorldW, kWorldH - kGroundY} );
+    grass.setPosition ( {0.f, kGroundY} );
+    grass.setFillColor ( sf::Color ( 90, 170, 65 ) );
     window.draw ( grass );
 
-    // darker ground below grass
-    sf::RectangleShape ground ( {ws.x, 20.f} );
-    ground.setPosition ( {0.f, ws.y - 20.f} );
-    ground.setFillColor ( sf::Color ( 60, 110, 40 ) );
-    window.draw ( ground );
+    // Grass highlight strip
+    sf::RectangleShape grass_top ( {kWorldW, 8.f} );
+    grass_top.setPosition ( {0.f, kGroundY} );
+    grass_top.setFillColor ( sf::Color ( 110, 190, 75 ) );
+    window.draw ( grass_top );
+
+    // Darker earth at very bottom
+    sf::RectangleShape earth ( {kWorldW, 30.f} );
+    earth.setPosition ( {0.f, kWorldH - 30.f} );
+    earth.setFillColor ( sf::Color ( 70, 120, 45 ) );
+    window.draw ( earth );
+}
+
+void draw_hill ( sf::RenderWindow& window, float cx, float base_y,
+                 float width, float height, sf::Color color )
+{
+    const int segments = 20;
+    sf::VertexArray hill ( sf::PrimitiveType::TriangleFan, segments + 2 );
+
+    // center bottom
+    hill[0] = {{cx, base_y}, color};
+
+    for ( int i = 0; i <= segments; ++i )
+    {
+        float t = static_cast<float> ( i ) / static_cast<float> ( segments );
+        float x = cx - width / 2.f + t * width;
+        float y = base_y - height * std::sin ( t * 3.14159f );
+        hill[static_cast<unsigned> ( i + 1 )] = {{x, y}, color};
+    }
+
+    window.draw ( hill );
+}
+
+void draw_cloud ( sf::RenderWindow& window, float x, float y, float scale )
+{
+    sf::Color cloud_color ( 255, 255, 255, 60 );
+
+    auto blob = [&] ( float ox, float oy, float r )
+    {
+        sf::CircleShape c ( r * scale );
+        c.setOrigin ( {r * scale, r * scale} );
+        c.setPosition ( {x + ox * scale, y + oy * scale} );
+        c.setFillColor ( cloud_color );
+        window.draw ( c );
+    };
+
+    blob ( 0.f, 0.f, 40.f );
+    blob ( 50.f, -10.f, 50.f );
+    blob ( 100.f, 5.f, 35.f );
+    blob ( -40.f, 5.f, 30.f );
+    blob ( 30.f, -25.f, 30.f );
 }
 
 void Renderer::draw_object ( sf::RenderWindow& window, const ObjectSnapshot& obj )
 {
     const bool uses_hp = ( obj.kind == ObjectSnapshot::Kind::Block
                            || obj.kind == ObjectSnapshot::Kind::Target );
+
+    const sf::Texture* texture = nullptr;
+    if ( obj.kind == ObjectSnapshot::Kind::Block )
+    {
+        texture = &textures_.block ( obj.material );
+    }
+    else if ( obj.kind == ObjectSnapshot::Kind::Target )
+    {
+        texture = &textures_.target();
+    }
+    else if ( obj.kind == ObjectSnapshot::Kind::Projectile )
+    {
+        texture = &textures_.projectile ( obj.projectileType );
+    }
+
+    if ( texture )
+    {
+        sf::Sprite sprite ( *texture );
+        const auto tex_size = texture->getSize();
+        const sf::Vector2f tex_size_f ( static_cast<float> ( tex_size.x ),
+                                        static_cast<float> ( tex_size.y ) );
+
+        float draw_w = obj.sizePx.x;
+        float draw_h = obj.sizePx.y;
+        if ( obj.radiusPx > 0.f )
+        {
+            draw_w = obj.radiusPx * 2.f;
+            draw_h = obj.radiusPx * 2.f;
+        }
+
+        if ( draw_w <= 0.f || draw_h <= 0.f )
+            return;
+
+        sprite.setOrigin ( {tex_size_f.x * 0.5f, tex_size_f.y * 0.5f} );
+        sprite.setScale ( {draw_w / tex_size_f.x, draw_h / tex_size_f.y} );
+        sprite.setPosition ( {obj.positionPx.x, obj.positionPx.y} );
+        sprite.setRotation ( sf::degrees ( obj.angleDeg ) );
+        sprite.setColor ( uses_hp ? tint_by_hp ( sf::Color::White, obj.hpNormalized )
+                                  : sf::Color::White );
+        window.draw ( sprite );
+        return;
+    }
 
     if ( obj.radiusPx > 0.f )
     {
@@ -143,23 +260,23 @@ void Renderer::draw_object ( sf::RenderWindow& window, const ObjectSnapshot& obj
 
 void Renderer::draw_slingshot ( sf::RenderWindow& window, const SlingshotState& sling )
 {
-    sf::RectangleShape post ( {10.f, 60.f} );
-    post.setOrigin ( {5.f, 60.f} );
-    post.setPosition ( {sling.basePx.x, sling.basePx.y} );
-    post.setFillColor ( sf::Color ( 101, 67, 33 ) );
-    window.draw ( post );
+    const sf::Texture& wood = textures_.slingshot_wood();
+    const auto tex_size = wood.getSize();
 
-    sf::RectangleShape left_prong ( {6.f, 25.f} );
-    left_prong.setOrigin ( {3.f, 25.f} );
-    left_prong.setPosition ( {sling.basePx.x - 8.f, sling.basePx.y - 55.f} );
-    left_prong.setFillColor ( sf::Color ( 101, 67, 33 ) );
-    window.draw ( left_prong );
+    auto draw_piece = [&] ( sf::Vector2f position, sf::Vector2f size_px )
+    {
+        sf::Sprite piece ( wood );
+        piece.setOrigin ( {static_cast<float> ( tex_size.x ) * 0.5f,
+                           static_cast<float> ( tex_size.y )} );
+        piece.setPosition ( position );
+        piece.setScale ( {size_px.x / static_cast<float> ( tex_size.x ),
+                          size_px.y / static_cast<float> ( tex_size.y )} );
+        window.draw ( piece );
+    };
 
-    sf::RectangleShape right_prong ( {6.f, 25.f} );
-    right_prong.setOrigin ( {3.f, 25.f} );
-    right_prong.setPosition ( {sling.basePx.x + 8.f, sling.basePx.y - 55.f} );
-    right_prong.setFillColor ( sf::Color ( 101, 67, 33 ) );
-    window.draw ( right_prong );
+    draw_piece ( {sling.basePx.x, sling.basePx.y}, {14.f, 62.f} );
+    draw_piece ( {sling.basePx.x - 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
+    draw_piece ( {sling.basePx.x + 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
 }
 
 sf::Color Renderer::material_color ( Material mat )

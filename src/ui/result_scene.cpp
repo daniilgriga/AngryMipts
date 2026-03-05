@@ -53,6 +53,22 @@ void ResultScene::render ( sf::RenderWindow& window )
 {
     auto ws = sf::Vector2f ( window.getSize() );
 
+    sf::Vertex background[] = {
+        {{0.f, 0.f}, sf::Color ( 20, 28, 54 )},
+        {{ws.x, 0.f}, sf::Color ( 20, 28, 54 )},
+        {{ws.x, ws.y}, sf::Color ( 48, 68, 106 )},
+        {{0.f, ws.y}, sf::Color ( 48, 68, 106 )},
+    };
+    window.draw ( background, 4, sf::PrimitiveType::TriangleFan );
+
+    sf::RectangleShape panel ( {ws.x * 0.52f, ws.y * 0.52f} );
+    panel.setOrigin ( {panel.getSize().x * 0.5f, panel.getSize().y * 0.5f} );
+    panel.setPosition ( {ws.x * 0.5f, ws.y * 0.47f} );
+    panel.setFillColor ( sf::Color ( 10, 15, 30, 130 ) );
+    panel.setOutlineThickness ( 2.f );
+    panel.setOutlineColor ( sf::Color ( 195, 220, 255, 120 ) );
+    window.draw ( panel );
+
     auto center_text = [&] ( sf::Text& text, float y )
     {
         auto bounds = text.getLocalBounds();

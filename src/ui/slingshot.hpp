@@ -26,7 +26,9 @@ private:
 public:
     // Returns LaunchCmd if projectile was released
     std::optional<Command> handle_input ( const sf::Event& event,
-                                          const SlingshotState& sling );
+                                          const SlingshotState& sling,
+                                          const sf::RenderWindow& window,
+                                          const sf::View& world_view );
 
     void render ( sf::RenderWindow& window, const SlingshotState& sling );
 };

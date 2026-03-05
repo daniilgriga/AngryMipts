@@ -11,6 +11,38 @@ namespace angry
 namespace
 {
 
+constexpr float kWorldWidth = 1920.f;
+constexpr float kWorldHeight = 1080.f;
+constexpr float kCameraWidth = 1280.f;
+constexpr float kCameraHeight = 720.f;
+constexpr float kWorldAspect = kCameraWidth / kCameraHeight;
+
+void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
+{
+    if ( window_size.x == 0 || window_size.y == 0 )
+        return;
+
+    const float window_aspect =
+        static_cast<float> ( window_size.x ) / static_cast<float> ( window_size.y );
+
+    if ( window_aspect > kWorldAspect )
+    {
+        const float width = kWorldAspect / window_aspect;
+        const float left = ( 1.f - width ) * 0.5f;
+        view.setViewport ( sf::FloatRect ( {left, 0.f}, {width, 1.f} ) );
+    }
+    else if ( window_aspect < kWorldAspect )
+    {
+        const float height = window_aspect / kWorldAspect;
+        const float top = ( 1.f - height ) * 0.5f;
+        view.setViewport ( sf::FloatRect ( {0.f, top}, {1.f, height} ) );
+    }
+    else
+    {
+        view.setViewport ( sf::FloatRect ( {0.f, 0.f}, {1.f, 1.f} ) );
+    }
+}
+
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
 {
     if ( std::filesystem::exists( relativePath ) )
@@ -44,6 +76,20 @@ sf::Color material_particle_color ( Material mat )
         return sf::Color ( 210, 240, 255 );
     default:
         return sf::Color ( 200, 200, 200 );
+    }
+}
+
+sf::Color projectile_trail_color ( ProjectileType type )
+{
+    switch ( type )
+    {
+    case ProjectileType::Heavy:
+        return sf::Color ( 186, 145, 240, 170 );
+    case ProjectileType::Splitter:
+        return sf::Color ( 148, 220, 255, 170 );
+    case ProjectileType::Standard:
+    default:
+        return sf::Color ( 255, 165, 136, 165 );
     }
 }
 
@@ -98,6 +144,7 @@ GameScene::GameScene ( const sf::Font& font )
     : snapshot_ ( make_mock_snapshot() )
     , font_ ( font )
     , hud_text_ ( font_, "", 20 )
+    , game_view_ ( sf::FloatRect ( {0.f, 0.f}, {kCameraWidth, kCameraHeight} ) )
 {
     hud_text_.setFillColor ( sf::Color::White );
     hud_text_.setPosition ( {20.f, 20.f} );
@@ -183,6 +230,16 @@ void GameScene::process_events()
                     float speed = std::clamp ( e.impulse * 30.f, 40.f, 200.f );
                     particles_.emit ( pos, count,
                                       sf::Color ( 255, 220, 150 ), speed, 0.4f, 3.f );
+
+                    const float impulse = std::clamp ( e.impulse, 0.f, 30.f );
+                    if ( impulse > 1.2f )
+                    {
+                        shake_time_ =
+                            std::max ( shake_time_, std::clamp ( 0.06f + impulse * 0.012f,
+                                                                 0.06f, 0.24f ) );
+                        shake_strength_ =
+                            std::max ( shake_strength_, std::clamp ( impulse * 0.55f, 2.f, 14.f ) );
+                    }
                 }
                 else if constexpr ( std::is_same_v<T, DestroyedEvent> )
                 {
@@ -213,9 +270,11 @@ SceneId GameScene::handle_input ( const sf::Event& event )
             command_queue_.push ( ActivateAbilityCmd{INVALID_ID} );
     }
 
-    if ( snapshot_.status == LevelStatus::Running )
+    if ( snapshot_.status == LevelStatus::Running && window_ptr_ )
     {
-        auto cmd = slingshot_.handle_input ( event, snapshot_.slingshot );
+        apply_letterbox ( game_view_, window_ptr_->getSize() );
+        auto cmd = slingshot_.handle_input ( event, snapshot_.slingshot, *window_ptr_,
+                                             game_view_ );
         if ( cmd.has_value() )
             command_queue_.push ( *cmd );
     }
@@ -242,15 +301,46 @@ void GameScene::update()
     snapshot_ = physics_.getSnapshot();
     process_events();
 
+    for ( const auto& obj : snapshot_.objects )
+    {
+        if ( obj.isActive && obj.kind == ObjectSnapshot::Kind::Projectile )
+        {
+            particles_.emit ( {obj.positionPx.x, obj.positionPx.y}, 2,
+                              projectile_trail_color ( obj.projectileType ),
+                              38.f, 0.20f, 3.5f );
+            break;
+        }
+    }
+
+    if ( shake_time_ > 0.f )
+    {
+        shake_time_ = std::max ( 0.f, shake_time_ - dt );
+        shake_strength_ = std::max ( 0.f, shake_strength_ - dt * 30.f );
+    }
+
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
                           + "   [Space] Ability   [Backspace] Menu" );
 }
 
 void GameScene::render ( sf::RenderWindow& window )
 {
+    window_ptr_ = &window;
+    apply_letterbox ( game_view_, window.getSize() );
+
+    // World rendering in game coordinates (1920x1080)
+    sf::View world_view = game_view_;
+    if ( shake_time_ > 0.f && shake_strength_ > 0.f )
+    {
+        world_view.move ( {shake_dist_ ( rng_ ) * shake_strength_,
+                           shake_dist_ ( rng_ ) * shake_strength_} );
+    }
+    window.setView ( world_view );
     renderer_.draw_snapshot ( window, snapshot_ );
     slingshot_.render ( window, snapshot_.slingshot );
     particles_.render ( window );
+
+    // HUD in screen coordinates
+    window.setView ( window.getDefaultView() );
     renderer_.draw_hud ( window, snapshot_, hud_text_ );
 }
 

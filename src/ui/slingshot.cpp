@@ -6,7 +6,9 @@ namespace angry
 {
 
 std::optional<Command> Slingshot::handle_input ( const sf::Event& event,
-                                                  const SlingshotState& sling )
+                                                  const SlingshotState& sling,
+                                                  const sf::RenderWindow& window,
+                                                  const sf::View& world_view )
 {
     sf::Vector2f base ( sling.basePx.x, sling.basePx.y - 60.f );
 
@@ -14,8 +16,8 @@ std::optional<Command> Slingshot::handle_input ( const sf::Event& event,
     {
         if ( press->button == sf::Mouse::Button::Left && sling.canShoot )
         {
-            sf::Vector2f mouse ( static_cast<float> ( press->position.x ),
-                                 static_cast<float> ( press->position.y ) );
+            sf::Vector2f mouse = window.mapPixelToCoords (
+                {press->position.x, press->position.y}, world_view );
             float dist = std::hypot ( mouse.x - base.x, mouse.y - base.y );
 
             if ( dist < grab_radius_ )
@@ -31,8 +33,8 @@ std::optional<Command> Slingshot::handle_input ( const sf::Event& event,
     {
         if ( dragging_ )
         {
-            sf::Vector2f mouse ( static_cast<float> ( move->position.x ),
-                                 static_cast<float> ( move->position.y ) );
+            sf::Vector2f mouse = window.mapPixelToCoords (
+                {move->position.x, move->position.y}, world_view );
 
             sf::Vector2f offset = mouse - drag_start_;
             float len = std::hypot ( offset.x, offset.y );
@@ -71,7 +73,6 @@ void Slingshot::render ( sf::RenderWindow& window, const SlingshotState& sling )
 
     sf::Vector2f base ( sling.basePx.x, sling.basePx.y - 60.f );
 
-    // Rubber bands from fork prongs to drag point
     sf::Vector2f left_prong ( base.x - 8.f, base.y - 15.f );
     sf::Vector2f right_prong ( base.x + 8.f, base.y - 15.f );
 
@@ -95,6 +96,7 @@ void Slingshot::render ( sf::RenderWindow& window, const SlingshotState& sling )
     ball.setFillColor ( sf::Color ( 50, 50, 50 ) );
     window.draw ( ball );
 
+    // Trajectory preview
     sf::Vector2f pull = base - drag_current_;
     sf::Vector2f launch_vel = pull * 4.5f;
     auto points = calc_trajectory ( launch_vel, base, 60 );

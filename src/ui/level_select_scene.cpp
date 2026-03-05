@@ -136,6 +136,22 @@ void LevelSelectScene::render ( sf::RenderWindow& window )
 {
     auto ws = sf::Vector2f ( window.getSize() );
 
+    sf::Vertex background[] = {
+        {{0.f, 0.f}, sf::Color ( 16, 34, 62 )},
+        {{ws.x, 0.f}, sf::Color ( 16, 34, 62 )},
+        {{ws.x, ws.y}, sf::Color ( 36, 78, 96 )},
+        {{0.f, ws.y}, sf::Color ( 36, 78, 96 )},
+    };
+    window.draw ( background, 4, sf::PrimitiveType::TriangleFan );
+
+    sf::RectangleShape panel ( {ws.x * 0.64f, ws.y * 0.62f} );
+    panel.setOrigin ( {panel.getSize().x * 0.5f, panel.getSize().y * 0.5f} );
+    panel.setPosition ( {ws.x * 0.5f, ws.y * 0.5f} );
+    panel.setFillColor ( sf::Color ( 8, 16, 28, 130 ) );
+    panel.setOutlineThickness ( 2.f );
+    panel.setOutlineColor ( sf::Color ( 188, 220, 244, 115 ) );
+    window.draw ( panel );
+
     auto title_bounds = title_.getLocalBounds();
     title_.setOrigin ( {title_bounds.position.x + title_bounds.size.x / 2.f,
                         title_bounds.position.y + title_bounds.size.y / 2.f} );

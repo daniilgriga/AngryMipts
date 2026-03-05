@@ -1,4 +1,5 @@
 #pragma once
+#include "render/texture_manager.hpp"
 #include "shared/world_snapshot.hpp"
 
 #include <SFML/Graphics.hpp>
@@ -14,6 +15,8 @@ public:
                     sf::Text& score_text );
 
 private:
+    TextureManager textures_;
+
     void draw_object ( sf::RenderWindow& window, const ObjectSnapshot& obj );
     void draw_slingshot ( sf::RenderWindow& window, const SlingshotState& sling );
     void draw_background ( sf::RenderWindow& window );

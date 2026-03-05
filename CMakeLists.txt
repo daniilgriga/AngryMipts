@@ -81,6 +81,7 @@ add_executable(${PROJECT_NAME}
     src/ui/result_scene.cpp
     src/ui/level_select_scene.cpp
     src/render/renderer.cpp
+    src/render/texture_manager.cpp
     src/render/particles.cpp
 )
 target_include_directories(${PROJECT_NAME} PRIVATE src)
