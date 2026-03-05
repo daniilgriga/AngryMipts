@@ -794,6 +794,88 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         activeProjectileType_,
                         posPx});
                 }
+                else if (activeProjectileType_ == ProjectileType::Inflater)
+                {
+                    constexpr float kInflatedRadiusPx = 22.0f;
+                    constexpr float kInflatedDensity = 0.75f;
+                    constexpr float kInflateSpeedDamp = 0.85f;
+
+                    const EntityId projectileId = projectile->id;
+                    const b2BodyId oldBodyId = activeProjectileBodyId_;
+                    const b2Vec2 worldPos = b2Body_GetPosition(oldBodyId);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(oldBodyId);
+                    const float angularVel = b2Body_GetAngularVelocity(oldBodyId);
+                    const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+
+                    b2BodyDef bodyDef = b2DefaultBodyDef();
+                    bodyDef.type = b2_dynamicBody;
+                    bodyDef.isBullet = true;
+                    bodyDef.linearDamping = 0.0f;
+                    bodyDef.angularDamping = 0.0f;
+                    bodyDef.position = worldPos;
+
+                    const b2BodyId inflatedBodyId = b2CreateBody(worldId_, &bodyDef);
+                    if (B2_IS_NULL(inflatedBodyId))
+                    {
+                        return;
+                    }
+
+                    b2ShapeDef shapeDef = b2DefaultShapeDef();
+                    shapeDef.density = kInflatedDensity;
+                    shapeDef.friction = 0.35f;
+                    shapeDef.restitution = 0.05f;
+                    shapeDef.enableHitEvents = true;
+
+                    b2Circle circle = {};
+                    circle.center = b2Vec2{0.0f, 0.0f};
+                    circle.radius = kInflatedRadiusPx / PIXELS_PER_METER;
+                    b2CreateCircleShape(inflatedBodyId, &shapeDef, &circle);
+
+                    b2Body_SetLinearVelocity(
+                        inflatedBodyId,
+                        b2Vec2{
+                            worldVel.x * kInflateSpeedDamp,
+                            worldVel.y * kInflateSpeedDamp});
+                    b2Body_SetAngularVelocity(inflatedBodyId, angularVel * 0.7f);
+
+                    if (B2_IS_NON_NULL(oldBodyId) && b2Body_IsValid(oldBodyId))
+                    {
+                        destroyBody(oldBodyId);
+                    }
+                    const auto oldIt = std::find_if(
+                        bodies_.begin(),
+                        bodies_.end(),
+                        [oldBodyId](const BodyBinding& b)
+                        {
+                            return B2_IS_NON_NULL(b.bodyId) && bodyIdEquals(b.bodyId, oldBodyId);
+                        });
+                    if (oldIt != bodies_.end())
+                    {
+                        bodies_.erase(oldIt);
+                    }
+
+                    BodyBinding inflatedBinding;
+                    inflatedBinding.id = projectileId;
+                    inflatedBinding.kind = ObjectSnapshot::Kind::Projectile;
+                    inflatedBinding.bodyId = inflatedBodyId;
+                    inflatedBinding.sizePx = {kInflatedRadiusPx * 2.0f, kInflatedRadiusPx * 2.0f};
+                    inflatedBinding.radiusPx = kInflatedRadiusPx;
+                    inflatedBinding.material = Material::Stone;
+                    inflatedBinding.projectileType = ProjectileType::Inflater;
+                    inflatedBinding.hp = 1.0f;
+                    inflatedBinding.maxHp = 1.0f;
+                    inflatedBinding.lastPositionPx = posPx;
+                    inflatedBinding.lastAngleDeg = 0.0f;
+                    bodies_.push_back(inflatedBinding);
+
+                    activeProjectileBodyId_ = inflatedBodyId;
+                    activeProjectileType_ = ProjectileType::Inflater;
+                    activeProjectileAbilityUsed_ = true;
+                    events_.push_back(AbilityActivatedEvent{
+                        projectileId,
+                        activeProjectileType_,
+                        posPx});
+                }
                 else if (activeProjectileType_ == ProjectileType::Bomber)
                 {
                     constexpr float kExplosionRadiusPx = 90.0f;
