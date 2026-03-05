@@ -18,19 +18,19 @@
   },
   "projectiles": [
     {
-      "type": "Standard"
+      "type": "Striker"
     },
     {
-      "type": "Standard"
+      "type": "Crusher"
     },
     {
-      "type": "Standard"
+      "type": "Splitter"
     },
     {
-      "type": "Standard"
+      "type": "Striker"
     },
     {
-      "type": "Standard"
+      "type": "Crusher"
     }
   ],
   "blocks": [

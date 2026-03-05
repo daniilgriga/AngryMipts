@@ -1,67 +1,120 @@
 {
-  "meta": {
-    "id": 3,
-    "name": "Glass Bridge",
-    "totalShots": 5,
-    "starThresholds": [2000, 4500, 7000]
-  },
-  "slingshot": {
-    "position": [140, 700],
-    "maxPull": 135
-  },
-  "projectiles": [
-    { "type": "Standard" },
-    { "type": "Splitter" },
-    { "type": "Heavy" },
-    { "type": "Standard" },
-    { "type": "Splitter" }
-  ],
-  "blocks": [
-    {
-      "shape": "rect",
-      "material": "Glass",
-      "position": [870, 673],
-      "size": [24, 90],
-      "angle": 0,
-      "hp": 35
+    "meta": {
+        "id": 3,
+        "name": "Glass Bridge",
+        "totalShots": 8,
+        "starThresholds": [
+            2000,
+            4500,
+            7000
+        ]
     },
-    {
-      "shape": "rect",
-      "material": "Glass",
-      "position": [1030, 673],
-      "size": [24, 90],
-      "angle": 0,
-      "hp": 35
+    "slingshot": {
+        "position": [
+            140,
+            700
+        ],
+        "maxPull": 135
     },
-    {
-      "shape": "rect",
-      "material": "Wood",
-      "position": [950, 623],
-      "size": [200, 20],
-      "angle": 0,
-      "hp": 55
-    },
-    {
-      "shape": "circle",
-      "material": "Stone",
-      "position": [950, 583],
-      "radius": 28,
-      "angle": 0,
-      "hp": 110
-    }
-  ],
-  "targets": [
-    {
-      "position": [905, 593],
-      "radius": 16,
-      "hp": 22,
-      "score": 1400
-    },
-    {
-      "position": [995, 593],
-      "radius": 16,
-      "hp": 22,
-      "score": 1400
-    }
-  ]
+    "projectiles": [
+        {
+            "type": "Striker"
+        },
+        {
+            "type": "Splitter"
+        },
+        {
+            "type": "Crusher"
+        },
+        {
+            "type": "Striker"
+        },
+        {
+            "type": "Splitter"
+        },
+        {
+            "type": "Splitter"
+        },
+        {
+            "type": "Splitter"
+        },
+        {
+            "type": "Splitter"
+        }
+    ],
+    "blocks": [
+        {
+            "shape": "rect",
+            "material": "Glass",
+            "position": [
+                870,
+                673
+            ],
+            "size": [
+                24,
+                90
+            ],
+            "angle": 0,
+            "hp": 35
+        },
+        {
+            "shape": "rect",
+            "material": "Glass",
+            "position": [
+                1030,
+                673
+            ],
+            "size": [
+                24,
+                90
+            ],
+            "angle": 0,
+            "hp": 35
+        },
+        {
+            "shape": "rect",
+            "material": "Wood",
+            "position": [
+                950,
+                623
+            ],
+            "size": [
+                200,
+                20
+            ],
+            "angle": 0,
+            "hp": 55
+        },
+        {
+            "shape": "circle",
+            "material": "Stone",
+            "position": [
+                950,
+                583
+            ],
+            "radius": 28,
+            "angle": 0,
+            "hp": 110
+        }
+    ],
+    "targets": [
+        {
+            "position": [
+                905,
+                593
+            ],
+            "radius": 16,
+            "hp": 22,
+            "score": 1400
+        },
+        {
+            "position": [
+                995,
+                593
+            ],
+            "radius": 16,
+            "hp": 22,
+            "score": 1400
+        }
+    ]
 }

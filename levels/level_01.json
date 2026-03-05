@@ -10,9 +10,9 @@
     "maxPull": 120
   },
   "projectiles": [
-    { "type": "Standard" },
-    { "type": "Standard" },
-    { "type": "Heavy" }
+    { "type": "Striker" },
+    { "type": "Striker" },
+    { "type": "Crusher" }
   ],
   "blocks": [
     {

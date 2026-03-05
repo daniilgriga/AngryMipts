@@ -30,6 +30,12 @@ enum class ProjectileType : uint8_t
     Standard,
     Heavy,
     Splitter,
+    Dasher,
+    Bomber,
+    Dropper,
+    Boomerang,
+    Bubbler,
+    Inflater,
 };
 
 enum class LevelStatus : uint8_t

@@ -1,8 +1,8 @@
 {
   "meta": {
     "id": 5,
-    "name": "level_5",
-    "totalShots": 10,
+    "name": "physics_debug_original_birds",
+    "totalShots": 9,
     "starThresholds": [
       1,
       2,
@@ -18,34 +18,31 @@
   },
   "projectiles": [
     {
-      "type": "Standard"
+      "type": "Striker"
     },
     {
-      "type": "Standard"
+      "type": "Splitter"
     },
     {
-      "type": "Standard"
+      "type": "Dasher"
     },
     {
-      "type": "Standard"
+      "type": "Bomber"
     },
     {
-      "type": "Standard"
+      "type": "Dropper"
     },
     {
-      "type": "Standard"
+      "type": "Boomerang"
     },
     {
-      "type": "Standard"
+      "type": "Crusher"
     },
     {
-      "type": "Standard"
+      "type": "Bubbler"
     },
     {
-      "type": "Standard"
-    },
-    {
-      "type": "Standard"
+      "type": "Inflater"
     }
   ],
   "blocks": [

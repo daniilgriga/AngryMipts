@@ -147,17 +147,41 @@ Material parseMaterial( const std::string& value, const std::string& context )
 
 ProjectileType parseProjectileType( const std::string& value, const std::string& context )
 {
-    if ( value == "Standard" )
+    if ( value == "Striker" || value == "Standard" )
     {
         return ProjectileType::Standard;
     }
-    if ( value == "Heavy" )
+    if ( value == "Crusher" || value == "Heavy" )
     {
         return ProjectileType::Heavy;
     }
     if ( value == "Splitter" )
     {
         return ProjectileType::Splitter;
+    }
+    if ( value == "Dasher" )
+    {
+        return ProjectileType::Dasher;
+    }
+    if ( value == "Bomber" )
+    {
+        return ProjectileType::Bomber;
+    }
+    if ( value == "Dropper" )
+    {
+        return ProjectileType::Dropper;
+    }
+    if ( value == "Boomerang" )
+    {
+        return ProjectileType::Boomerang;
+    }
+    if ( value == "Bubbler" )
+    {
+        return ProjectileType::Bubbler;
+    }
+    if ( value == "Inflater" )
+    {
+        return ProjectileType::Inflater;
     }
 
     throw std::runtime_error( context + ": unknown projectile type '" + value + "'" );
