@@ -403,6 +403,11 @@ WorldSnapshot GameScene::make_mock_snapshot()
     snap.slingshot.maxPullPx = 120.f;
     snap.slingshot.canShoot = true;
     snap.slingshot.nextProjectile = ProjectileType::Standard;
+    snap.projectileQueue = {
+        ProjectileType::Standard,
+        ProjectileType::Heavy,
+        ProjectileType::Splitter,
+    };
 
     EntityId id = 1;
 

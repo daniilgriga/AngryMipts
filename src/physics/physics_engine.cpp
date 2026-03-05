@@ -1242,6 +1242,24 @@ void PhysicsEngine::refreshSnapshot()
 
         snapshot_.objects.push_back(object);
     }
+
+    snapshot_.projectileQueue.clear();
+    if (!currentLevel_.projectiles.empty())
+    {
+        const int totalProjectiles = static_cast<int>(currentLevel_.projectiles.size());
+        const int nextIndex = std::clamp(nextProjectileIndex_, 0, totalProjectiles);
+
+        // While projectile is flying, keep it at queue front for HUD continuity.
+        if (!snapshot_.slingshot.canShoot && nextIndex > 0)
+        {
+            snapshot_.projectileQueue.push_back(currentLevel_.projectiles[nextIndex - 1].type);
+        }
+
+        for (int i = nextIndex; i < totalProjectiles; ++i)
+        {
+            snapshot_.projectileQueue.push_back(currentLevel_.projectiles[i].type);
+        }
+    }
 }
 
 void PhysicsEngine::tryPrepareNextProjectile()

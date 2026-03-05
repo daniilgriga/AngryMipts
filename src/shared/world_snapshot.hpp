@@ -38,6 +38,7 @@ struct SlingshotState
 struct WorldSnapshot
 {
     std::vector<ObjectSnapshot> objects;
+    std::vector<ProjectileType> projectileQueue;  // Front-first queue for HUD (current/loaded + next)
     SlingshotState slingshot;
 
     int score;
