@@ -136,6 +136,107 @@ sf::Color projectile_trail_color ( ProjectileType type )
     }
 }
 
+sf::Color ability_core_color ( ProjectileType type )
+{
+    switch ( type )
+    {
+    case ProjectileType::Heavy:
+        return sf::Color ( 196, 146, 255 );
+    case ProjectileType::Splitter:
+        return sf::Color ( 216, 246, 255 );
+    case ProjectileType::Standard:
+    default:
+        return sf::Color ( 255, 190, 150 );
+    }
+}
+
+sf::Color ability_glow_color ( ProjectileType type )
+{
+    switch ( type )
+    {
+    case ProjectileType::Heavy:
+        return sf::Color ( 112, 76, 196, 220 );
+    case ProjectileType::Splitter:
+        return sf::Color ( 126, 214, 255, 220 );
+    case ProjectileType::Standard:
+    default:
+        return sf::Color ( 255, 170, 120, 210 );
+    }
+}
+
+struct AbilityVfxProfile
+{
+    int ringPrimaryCount;
+    float ringPrimarySpeed;
+    float ringPrimaryLifetime;
+    float ringPrimarySize;
+    int ringSecondaryCount;
+    float ringSecondarySpeed;
+    float ringSecondaryLifetime;
+    float ringSecondarySize;
+    int burstCount;
+    float burstSpeed;
+    float burstLifetime;
+    float burstSize;
+    int shardCount;
+    float shardSpeed;
+    float shardLifetime;
+    float shardSize;
+    float shardAngularSpeed;
+    float shakeTime;
+    float shakeStrength;
+    float flashBoost;
+    bool burstUsesGlow;
+};
+
+AbilityVfxProfile ability_vfx_profile ( ProjectileType type )
+{
+    switch ( type )
+    {
+    case ProjectileType::Heavy:
+        return {
+            18,   // primary ring count
+            128.f, 0.24f, 4.6f,
+            0,    // secondary ring disabled
+            0.f, 0.f, 0.f,
+            24,   // burst
+            165.f, 0.42f, 4.9f,
+            10,   // shards
+            138.f, 0.52f, 5.4f, 380.f,
+            0.14f, 6.8f, 0.16f,
+            true  // burst is glow, shards are core
+        };
+    case ProjectileType::Splitter:
+        return {
+            20,
+            152.f, 0.20f, 4.1f,
+            12,
+            92.f, 0.30f, 3.3f,
+            20,
+            172.f, 0.34f, 3.9f,
+            14,
+            182.f, 0.40f, 3.7f, 520.f,
+            0.10f, 5.2f, 0.14f,
+            false  // burst is core, shards are glow
+        };
+    case ProjectileType::Standard:
+    default:
+        // Defensive fallback for future ability-enabled projectiles.
+        return {
+            14,
+            112.f, 0.22f, 3.5f,
+            0,
+            0.f, 0.f, 0.f,
+            16,
+            138.f, 0.30f, 3.5f,
+            8,
+            132.f, 0.34f, 3.2f, 320.f,
+            0.08f, 4.2f, 0.10f,
+            false
+        };
+    }
+}
+
 struct MaterialVfxProfile
 {
     sf::Color sparkColor;
@@ -515,6 +616,36 @@ void GameScene::process_events()
 
                     impact_flash_ =
                         std::max ( impact_flash_, profile.destroyFlashBoost );
+                }
+                else if constexpr ( std::is_same_v<T, AbilityActivatedEvent> )
+                {
+                    const sf::Vector2f pos ( e.positionPx.x, e.positionPx.y );
+                    const sf::Color core = ability_core_color ( e.projectileType );
+                    const sf::Color glow = ability_glow_color ( e.projectileType );
+                    const AbilityVfxProfile cfg = ability_vfx_profile ( e.projectileType );
+
+                    particles_.emit_ring ( pos, cfg.ringPrimaryCount, core,
+                                           cfg.ringPrimarySpeed, cfg.ringPrimaryLifetime,
+                                           cfg.ringPrimarySize );
+                    if ( cfg.ringSecondaryCount > 0 )
+                    {
+                        particles_.emit_ring ( pos, cfg.ringSecondaryCount, glow,
+                                               cfg.ringSecondarySpeed,
+                                               cfg.ringSecondaryLifetime,
+                                               cfg.ringSecondarySize );
+                    }
+
+                    const sf::Color burstColor = cfg.burstUsesGlow ? glow : core;
+                    const sf::Color shardColor = cfg.burstUsesGlow ? core : glow;
+                    particles_.emit ( pos, cfg.burstCount, burstColor, cfg.burstSpeed,
+                                      cfg.burstLifetime, cfg.burstSize );
+                    particles_.emit_shards ( pos, cfg.shardCount, shardColor,
+                                             cfg.shardSpeed, cfg.shardLifetime,
+                                             cfg.shardSize, cfg.shardAngularSpeed );
+
+                    shake_time_ = std::max ( shake_time_, cfg.shakeTime );
+                    shake_strength_ = std::max ( shake_strength_, cfg.shakeStrength );
+                    impact_flash_ = std::max ( impact_flash_, cfg.flashBoost );
                 }
             },
             ev );
