@@ -30,6 +30,23 @@ std::string resolveProjectPath( const std::filesystem::path& relativePath )
     return relativePath.string();
 }
 
+sf::Color material_particle_color ( Material mat )
+{
+    switch ( mat )
+    {
+    case Material::Wood:
+        return sf::Color ( 200, 140, 70 );
+    case Material::Stone:
+        return sf::Color ( 170, 170, 170 );
+    case Material::Glass:
+        return sf::Color ( 180, 230, 255 );
+    case Material::Ice:
+        return sf::Color ( 210, 240, 255 );
+    default:
+        return sf::Color ( 200, 200, 200 );
+    }
+}
+
 }  // namespace
 
 WorldSnapshot GameScene::make_mock_snapshot()
@@ -42,7 +59,6 @@ WorldSnapshot GameScene::make_mock_snapshot()
     snap.stars = 0;
     snap.physicsStepMs = 0.f;
 
-    // slingshot
     snap.slingshot.basePx = {200.f, 550.f};
     snap.slingshot.pullOffsetPx = {0.f, 0.f};
     snap.slingshot.maxPullPx = 120.f;
@@ -51,32 +67,26 @@ WorldSnapshot GameScene::make_mock_snapshot()
 
     EntityId id = 1;
 
-    // ground
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Block,
                               {640.f, 700.f}, 0.f, {1280.f, 40.f}, 0.f,
                               Material::Stone, ProjectileType::Standard, 1.f, true} );
 
-    // left pillar
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Block,
                               {800.f, 580.f}, 0.f, {20.f, 100.f}, 0.f,
                               Material::Wood, ProjectileType::Standard, 1.f, true} );
 
-    // right pillar
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Block,
                               {900.f, 580.f}, 0.f, {20.f, 100.f}, 0.f,
                               Material::Wood, ProjectileType::Standard, 1.f, true} );
 
-    // top beam
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Block,
                               {850.f, 520.f}, 0.f, {140.f, 20.f}, 0.f,
                               Material::Wood, ProjectileType::Standard, 0.8f, true} );
 
-    // glass block on top
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Block,
                               {850.f, 500.f}, 0.f, {60.f, 20.f}, 0.f,
                               Material::Glass, ProjectileType::Standard, 1.f, true} );
 
-    // target (circle)
     snap.objects.push_back ( {id++, ObjectSnapshot::Kind::Target,
                               {850.f, 560.f}, 0.f, {0.f, 0.f}, 15.f,
                               Material::Wood, ProjectileType::Standard, 1.f, true} );
@@ -98,6 +108,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     level_id_ = level_id;
     scores_path_ = scores_path;
     pending_scene_ = SceneId::None;
+    end_delay_ = 0.f;
 
     try
     {
@@ -155,6 +166,35 @@ void GameScene::finish_level()
     pending_scene_ = SceneId::Result;
 }
 
+void GameScene::process_events()
+{
+    auto events = physics_.drainEvents();
+    for ( const auto& ev : events )
+    {
+        std::visit (
+            [this] ( const auto& e )
+            {
+                using T = std::decay_t<decltype ( e )>;
+
+                if constexpr ( std::is_same_v<T, CollisionEvent> )
+                {
+                    sf::Vector2f pos ( e.contactPointPx.x, e.contactPointPx.y );
+                    int count = std::clamp ( static_cast<int> ( e.impulse * 2.f ), 3, 15 );
+                    float speed = std::clamp ( e.impulse * 30.f, 40.f, 200.f );
+                    particles_.emit ( pos, count,
+                                      sf::Color ( 255, 220, 150 ), speed, 0.4f, 3.f );
+                }
+                else if constexpr ( std::is_same_v<T, DestroyedEvent> )
+                {
+                    sf::Vector2f pos ( e.positionPx.x, e.positionPx.y );
+                    sf::Color color = material_particle_color ( e.material );
+                    particles_.emit ( pos, 20, color, 150.f, 0.6f, 4.f );
+                }
+            },
+            ev );
+    }
+}
+
 SceneId GameScene::handle_input ( const sf::Event& event )
 {
     if ( pending_scene_ != SceneId::None )
@@ -168,6 +208,9 @@ SceneId GameScene::handle_input ( const sf::Event& event )
     {
         if ( key->code == sf::Keyboard::Key::Backspace )
             return SceneId::Menu;
+
+        if ( key->code == sf::Keyboard::Key::Space )
+            command_queue_.push ( ActivateAbilityCmd{INVALID_ID} );
     }
 
     if ( snapshot_.status == LevelStatus::Running )
@@ -182,26 +225,32 @@ SceneId GameScene::handle_input ( const sf::Event& event )
 
 void GameScene::update()
 {
+    const float dt = std::clamp ( frame_clock_.restart().asSeconds(), 0.0f, 1.0f / 30.0f );
+
+    particles_.update ( dt );
+
     if ( snapshot_.status != LevelStatus::Running )
     {
-        if ( pending_scene_ == SceneId::None )
+        end_delay_ += dt;
+        if ( end_delay_ >= 1.5f && pending_scene_ == SceneId::None )
             finish_level();
         return;
     }
 
-    const float dt = std::clamp ( frame_clock_.restart().asSeconds(), 0.0f, 1.0f / 30.0f );
     physics_.processCommands ( command_queue_ );
     physics_.step ( dt );
     snapshot_ = physics_.getSnapshot();
+    process_events();
 
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
-                          + "   [Backspace] Menu" );
+                          + "   [Space] Ability   [Backspace] Menu" );
 }
 
 void GameScene::render ( sf::RenderWindow& window )
 {
     renderer_.draw_snapshot ( window, snapshot_ );
     slingshot_.render ( window, snapshot_.slingshot );
+    particles_.render ( window );
     renderer_.draw_hud ( window, snapshot_, hud_text_ );
 }
 

@@ -2,6 +2,7 @@
 #include "data/level_loader.hpp"
 #include "data/score_saver.hpp"
 #include "physics/physics_engine.hpp"
+#include "render/particles.hpp"
 #include "render/renderer.hpp"
 #include "scene.hpp"
 #include "shared/level_data.hpp"
@@ -18,6 +19,7 @@ class GameScene : public Scene
 private:
     Renderer renderer_;
     Slingshot slingshot_;
+    ParticleSystem particles_;
     PhysicsEngine physics_;
     ThreadSafeQueue<Command> command_queue_;
     LevelLoader level_loader_;
@@ -28,12 +30,14 @@ private:
     sf::Clock frame_clock_;
     LevelResult last_result_;
     SceneId pending_scene_ = SceneId::None;
+    float end_delay_ = 0.f;
     int level_id_ = -1;
     std::string scores_path_;
     LevelMeta current_meta_;
 
     static WorldSnapshot make_mock_snapshot();
     void finish_level();
+    void process_events();
 
 public:
     explicit GameScene ( const sf::Font& font );
