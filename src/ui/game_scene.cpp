@@ -15,6 +15,10 @@ constexpr float kCameraWidth = 1280.f;
 constexpr float kCameraHeight = 720.f;
 constexpr float kWorldAspect = kCameraWidth / kCameraHeight;
 constexpr float kImpactFlashDecay = 3.0f;
+constexpr float kHitStopImpulseThreshold = 8.0f;
+constexpr float kHitStopImpulseMax = 22.0f;
+constexpr float kHitStopMinSeconds = 0.035f;
+constexpr float kHitStopMaxSeconds = 0.060f;
 
 constexpr auto kPostFxFragmentShader = R"GLSL(
 uniform sampler2D texture;
@@ -101,6 +105,18 @@ void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
     {
         view.setViewport ( sf::FloatRect ( {0.f, 0.f}, {1.f, 1.f} ) );
     }
+}
+
+float hit_stop_duration_from_impulse ( float impulse )
+{
+    if ( impulse < kHitStopImpulseThreshold )
+        return 0.f;
+
+    const float t = std::clamp (
+        ( impulse - kHitStopImpulseThreshold )
+            / ( kHitStopImpulseMax - kHitStopImpulseThreshold ),
+        0.f, 1.f );
+    return kHitStopMinSeconds + ( kHitStopMaxSeconds - kHitStopMinSeconds ) * t;
 }
 
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
@@ -488,6 +504,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     scores_path_ = scores_path;
     pending_scene_ = SceneId::None;
     end_delay_ = 0.f;
+    hit_stop_time_ = 0.f;
 
     try
     {
@@ -596,6 +613,17 @@ void GameScene::process_events()
                             std::max ( impact_flash_, std::clamp (
                                 impulse * profile.hitFlashBoost, 0.03f, 0.30f ) );
                     }
+
+                    const float hit_stop = hit_stop_duration_from_impulse ( impulse );
+                    if ( hit_stop > 0.f )
+                    {
+                        hit_stop_time_ = std::max ( hit_stop_time_, hit_stop );
+                        shake_time_ = std::max ( shake_time_, 0.05f + hit_stop * 0.55f );
+                        shake_strength_ = std::max (
+                            shake_strength_, std::clamp ( impulse * 0.45f, 3.f, 11.f ) );
+                        impact_flash_ = std::max (
+                            impact_flash_, std::clamp ( 0.05f + impulse * 0.008f, 0.05f, 0.22f ) );
+                    }
                 }
                 else if constexpr ( std::is_same_v<T, DestroyedEvent> )
                 {
@@ -691,15 +719,24 @@ void GameScene::update()
 {
     const float dt = std::clamp ( frame_clock_.restart().asSeconds(), 0.0f, 1.0f / 30.0f );
 
-    particles_.update ( dt );
-
     if ( snapshot_.status != LevelStatus::Running )
     {
+        particles_.update ( dt );
         end_delay_ += dt;
         if ( end_delay_ >= 1.5f && pending_scene_ == SceneId::None )
             finish_level();
         return;
     }
+
+    if ( hit_stop_time_ > 0.f )
+    {
+        hit_stop_time_ = std::max ( 0.f, hit_stop_time_ - dt );
+        hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
+                              + "   [Space] Ability   [Backspace] Menu" );
+        return;
+    }
+
+    particles_.update ( dt );
 
     physics_.processCommands ( command_queue_ );
     physics_.step ( dt );

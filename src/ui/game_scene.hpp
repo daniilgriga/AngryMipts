@@ -51,6 +51,7 @@ private:
     sf::Clock visual_clock_;
     float shake_time_ = 0.f;
     float shake_strength_ = 0.f;
+    float hit_stop_time_ = 0.f;
     std::mt19937 rng_ {std::random_device {} ()};
     std::uniform_real_distribution<float> shake_dist_ {-1.f, 1.f};
 
