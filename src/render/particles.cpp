@@ -66,7 +66,7 @@ void ParticleSystem::update ( float dt )
         particles_.end() );
 }
 
-void ParticleSystem::render ( sf::RenderWindow& window )
+void ParticleSystem::render ( sf::RenderTarget& target )
 {
     for ( const auto& p : particles_ )
     {
@@ -81,7 +81,7 @@ void ParticleSystem::render ( sf::RenderWindow& window )
         c.a = static_cast<uint8_t> ( 255.f * alpha * alpha );
         dot.setFillColor ( c );
 
-        window.draw ( dot );
+        target.draw ( dot );
     }
 }
 

@@ -11,11 +11,39 @@ namespace angry
 namespace
 {
 
-constexpr float kWorldWidth = 1920.f;
-constexpr float kWorldHeight = 1080.f;
 constexpr float kCameraWidth = 1280.f;
 constexpr float kCameraHeight = 720.f;
 constexpr float kWorldAspect = kCameraWidth / kCameraHeight;
+constexpr float kImpactFlashDecay = 3.0f;
+
+constexpr auto kPostFxFragmentShader = R"GLSL(
+uniform sampler2D texture;
+uniform float uTime;
+uniform float uVignette;
+uniform float uFlash;
+
+void main()
+{
+    vec2 uv = gl_TexCoord[0].xy;
+    vec4 color = texture2D(texture, uv);
+
+    // Slight filmic curve and contrast to make sprites look less flat.
+    color.rgb = pow(color.rgb, vec3(0.95));
+    color.rgb = (color.rgb - vec3(0.5)) * 1.08 + vec3(0.5);
+
+    float dist = distance(uv, vec2(0.5, 0.5));
+    float vignette = smoothstep(0.38, 0.86, dist);
+    color.rgb *= 1.0 - uVignette * vignette;
+
+    float atmosphere = 0.016 * sin(uTime * 1.4 + uv.y * 11.0);
+    color.rgb += vec3(atmosphere);
+
+    float flashShape = max(0.0, 0.62 - dist);
+    color.rgb += vec3(uFlash * flashShape);
+
+    gl_FragColor = color;
+}
+)GLSL";
 
 void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
 {
@@ -148,6 +176,24 @@ GameScene::GameScene ( const sf::Font& font )
 {
     hud_text_.setFillColor ( sf::Color::White );
     hud_text_.setPosition ( {20.f, 20.f} );
+
+    if ( sf::Shader::isAvailable() )
+    {
+        post_shader_ready_ = post_shader_.loadFromMemory (
+            kPostFxFragmentShader, sf::Shader::Type::Fragment );
+        if ( post_shader_ready_ )
+        {
+            post_shader_.setUniform ( "texture", sf::Shader::CurrentTexture );
+        }
+        else
+        {
+            Logger::error ( "GameScene: failed to load post-processing shader" );
+        }
+    }
+    else
+    {
+        Logger::info ( "GameScene: shaders are unavailable, using fallback rendering path" );
+    }
 }
 
 void GameScene::load_level ( int level_id, const std::string& scores_path )
@@ -239,6 +285,8 @@ void GameScene::process_events()
                                                                  0.06f, 0.24f ) );
                         shake_strength_ =
                             std::max ( shake_strength_, std::clamp ( impulse * 0.55f, 2.f, 14.f ) );
+                        impact_flash_ =
+                            std::max ( impact_flash_, std::clamp ( impulse * 0.03f, 0.04f, 0.26f ) );
                     }
                 }
                 else if constexpr ( std::is_same_v<T, DestroyedEvent> )
@@ -246,6 +294,7 @@ void GameScene::process_events()
                     sf::Vector2f pos ( e.positionPx.x, e.positionPx.y );
                     sf::Color color = material_particle_color ( e.material );
                     particles_.emit ( pos, 20, color, 150.f, 0.6f, 4.f );
+                    impact_flash_ = std::max ( impact_flash_, 0.08f );
                 }
             },
             ev );
@@ -318,6 +367,8 @@ void GameScene::update()
         shake_strength_ = std::max ( 0.f, shake_strength_ - dt * 30.f );
     }
 
+    impact_flash_ = std::max ( 0.f, impact_flash_ - dt * kImpactFlashDecay );
+
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
                           + "   [Space] Ability   [Backspace] Menu" );
 }
@@ -327,20 +378,48 @@ void GameScene::render ( sf::RenderWindow& window )
     window_ptr_ = &window;
     apply_letterbox ( game_view_, window.getSize() );
 
-    // World rendering in game coordinates (1920x1080)
+    if ( world_pass_.getSize() != window.getSize() )
+    {
+        if ( !world_pass_.resize ( window.getSize() ) )
+        {
+            Logger::error ( "GameScene: failed to resize world render target" );
+        }
+        world_pass_.setSmooth ( true );
+    }
+
+    // World rendering in game coordinates
     sf::View world_view = game_view_;
     if ( shake_time_ > 0.f && shake_strength_ > 0.f )
     {
         world_view.move ( {shake_dist_ ( rng_ ) * shake_strength_,
                            shake_dist_ ( rng_ ) * shake_strength_} );
     }
-    window.setView ( world_view );
-    renderer_.draw_snapshot ( window, snapshot_ );
-    slingshot_.render ( window, snapshot_.slingshot );
-    particles_.render ( window );
+
+    world_pass_.clear ( sf::Color ( 6, 8, 14 ) );
+    world_pass_.setView ( world_view );
+    renderer_.draw_snapshot ( world_pass_, snapshot_ );
+    slingshot_.render ( world_pass_, snapshot_.slingshot );
+    particles_.render ( world_pass_ );
+    world_pass_.display();
+
+    window.setView ( window.getDefaultView() );
+    sf::Sprite world_sprite ( world_pass_.getTexture() );
+
+    if ( post_shader_ready_ )
+    {
+        post_shader_.setUniform ( "uTime", visual_clock_.getElapsedTime().asSeconds() );
+        post_shader_.setUniform ( "uVignette", 0.34f );
+        post_shader_.setUniform ( "uFlash", impact_flash_ );
+        sf::RenderStates states;
+        states.shader = &post_shader_;
+        window.draw ( world_sprite, states );
+    }
+    else
+    {
+        window.draw ( world_sprite );
+    }
 
     // HUD in screen coordinates
-    window.setView ( window.getDefaultView() );
     renderer_.draw_hud ( window, snapshot_, hud_text_ );
 }
 

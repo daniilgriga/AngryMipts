@@ -38,6 +38,11 @@ private:
     LevelMeta current_meta_;
     sf::View game_view_;
     sf::RenderWindow* window_ptr_ = nullptr;
+    sf::RenderTexture world_pass_;
+    sf::Shader post_shader_;
+    bool post_shader_ready_ = false;
+    float impact_flash_ = 0.f;
+    sf::Clock visual_clock_;
     float shake_time_ = 0.f;
     float shake_strength_ = 0.f;
     std::mt19937 rng_ {std::random_device {} ()};

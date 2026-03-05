@@ -66,7 +66,7 @@ std::optional<Command> Slingshot::handle_input ( const sf::Event& event,
     return std::nullopt;
 }
 
-void Slingshot::render ( sf::RenderWindow& window, const SlingshotState& sling )
+void Slingshot::render ( sf::RenderTarget& target, const SlingshotState& sling )
 {
     if ( !dragging_ )
         return;
@@ -82,19 +82,19 @@ void Slingshot::render ( sf::RenderWindow& window, const SlingshotState& sling )
         {left_prong, band_color},
         {drag_current_, band_color},
     };
-    window.draw ( band_left, 2, sf::PrimitiveType::Lines );
+    target.draw ( band_left, 2, sf::PrimitiveType::Lines );
 
     sf::Vertex band_right[] = {
         {right_prong, band_color},
         {drag_current_, band_color},
     };
-    window.draw ( band_right, 2, sf::PrimitiveType::Lines );
+    target.draw ( band_right, 2, sf::PrimitiveType::Lines );
 
     sf::CircleShape ball ( 8.f );
     ball.setOrigin ( {8.f, 8.f} );
     ball.setPosition ( drag_current_ );
     ball.setFillColor ( sf::Color ( 50, 50, 50 ) );
-    window.draw ( ball );
+    target.draw ( ball );
 
     // Trajectory preview
     sf::Vector2f pull = base - drag_current_;
@@ -107,7 +107,7 @@ void Slingshot::render ( sf::RenderWindow& window, const SlingshotState& sling )
         dot.setOrigin ( {2.f, 2.f} );
         dot.setPosition ( pt );
         dot.setFillColor ( sf::Color ( 255, 255, 255, 120 ) );
-        window.draw ( dot );
+        target.draw ( dot );
     }
 }
 

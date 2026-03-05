@@ -30,7 +30,7 @@ public:
                                           const sf::RenderWindow& window,
                                           const sf::View& world_view );
 
-    void render ( sf::RenderWindow& window, const SlingshotState& sling );
+    void render ( sf::RenderTarget& target, const SlingshotState& sling );
 };
 
 }  // namespace angry

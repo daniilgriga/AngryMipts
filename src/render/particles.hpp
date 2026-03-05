@@ -29,7 +29,7 @@ public:
     void emit_ring ( sf::Vector2f pos, int count, sf::Color color, float speed,
                      float lifetime, float size );
     void update ( float dt );
-    void render ( sf::RenderWindow& window );
+    void render ( sf::RenderTarget& target );
     bool empty() const { return particles_.empty(); }
 };
 
