@@ -20,6 +20,7 @@ private:
     void draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj );
     void draw_slingshot ( sf::RenderTarget& target, const SlingshotState& sling );
     void draw_background ( sf::RenderTarget& target );
+    void draw_damage_overlay ( sf::RenderTarget& target, const ObjectSnapshot& obj );
 
     sf::Color material_color ( Material mat );
     sf::Color kind_color ( ObjectSnapshot::Kind kind );

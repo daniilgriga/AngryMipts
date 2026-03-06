@@ -24,6 +24,17 @@ sf::Vector2f rotate_local ( sf::Vector2f v, float angle_deg )
     return {v.x * cs - v.y * sn, v.x * sn + v.y * cs};
 }
 
+float hash01 ( uint32_t value )
+{
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return static_cast<float> ( value & 0x00ffffffu )
+           / static_cast<float> ( 0x01000000u );
+}
+
 std::string projectile_label ( ProjectileType type )
 {
     switch ( type )
@@ -93,11 +104,6 @@ void Renderer::draw_hud ( sf::RenderTarget& target, const WorldSnapshot& snapsho
     const sf::Vector2f card_size ( 420.f, 100.f );
     const sf::Vector2f card_pos ( 18.f, 16.f );
 
-    sf::RectangleShape card_shadow ( card_size );
-    card_shadow.setPosition ( card_pos + sf::Vector2f ( 6.f, 8.f ) );
-    card_shadow.setFillColor ( sf::Color ( 8, 12, 20, 110 ) );
-    target.draw ( card_shadow );
-
     sf::RectangleShape card ( card_size );
     card.setPosition ( card_pos );
     card.setFillColor ( sf::Color ( 10, 18, 34, 166 ) );
@@ -143,11 +149,6 @@ void Renderer::draw_hud ( sf::RenderTarget& target, const WorldSnapshot& snapsho
     const float rail_h = 52.f;
     const sf::Vector2f rail_pos ( ws.x - rail_w - 18.f, 16.f );
 
-    sf::RectangleShape rail_shadow ( {rail_w, rail_h} );
-    rail_shadow.setPosition ( rail_pos + sf::Vector2f ( 4.f, 6.f ) );
-    rail_shadow.setFillColor ( sf::Color ( 8, 12, 20, 110 ) );
-    target.draw ( rail_shadow );
-
     sf::RectangleShape rail ( {rail_w, rail_h} );
     rail.setPosition ( rail_pos );
     rail.setFillColor ( sf::Color ( 10, 16, 30, 160 ) );
@@ -177,17 +178,6 @@ void Renderer::draw_hud ( sf::RenderTarget& target, const WorldSnapshot& snapsho
         slot.setPosition ( {slot_x, base_y} );
         slot.setFillColor ( sf::Color ( 255, 255, 255, 18 ) );
         target.draw ( slot );
-
-        if ( front_projectile )
-        {
-            const float glow_r = radius + 9.f + pulse * 3.f;
-            sf::CircleShape glow ( glow_r );
-            glow.setOrigin ( {glow_r, glow_r} );
-            glow.setPosition ( {slot_x + slide_px, base_y} );
-            glow.setFillColor (
-                sf::Color ( 255, 235, 164, static_cast<uint8_t> ( 58.f + pulse * 62.f ) ) );
-            target.draw ( glow );
-        }
 
         if ( has_projectile )
         {
@@ -328,6 +318,16 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
     const bool uses_hp = ( obj.kind == ObjectSnapshot::Kind::Block
                            || obj.kind == ObjectSnapshot::Kind::Target );
 
+    float draw_w = obj.sizePx.x;
+    float draw_h = obj.sizePx.y;
+    if ( obj.radiusPx > 0.f )
+    {
+        draw_w = obj.radiusPx * 2.f;
+        draw_h = obj.radiusPx * 2.f;
+    }
+    if ( draw_w <= 0.f || draw_h <= 0.f )
+        return;
+
     const sf::Texture* texture = nullptr;
     if ( obj.kind == ObjectSnapshot::Kind::Block )
     {
@@ -349,17 +349,6 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
         const sf::Vector2f tex_size_f ( static_cast<float> ( tex_size.x ),
                                         static_cast<float> ( tex_size.y ) );
 
-        float draw_w = obj.sizePx.x;
-        float draw_h = obj.sizePx.y;
-        if ( obj.radiusPx > 0.f )
-        {
-            draw_w = obj.radiusPx * 2.f;
-            draw_h = obj.radiusPx * 2.f;
-        }
-
-        if ( draw_w <= 0.f || draw_h <= 0.f )
-            return;
-
         sprite.setOrigin ( {tex_size_f.x * 0.5f, tex_size_f.y * 0.5f} );
         sprite.setScale ( {draw_w / tex_size_f.x, draw_h / tex_size_f.y} );
         sprite.setPosition ( {obj.positionPx.x, obj.positionPx.y} );
@@ -367,6 +356,8 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
         sprite.setColor ( uses_hp ? tint_by_hp ( sf::Color::White, obj.hpNormalized )
                                   : sf::Color::White );
         target.draw ( sprite );
+        if ( obj.kind == ObjectSnapshot::Kind::Block )
+            draw_damage_overlay ( target, obj );
 
         if ( obj.kind == ObjectSnapshot::Kind::Projectile
              && obj.projectileType == ProjectileType::Bomber
@@ -444,6 +435,8 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
         shape.setFillColor ( color );
 
         target.draw ( shape );
+        if ( obj.kind == ObjectSnapshot::Kind::Block )
+            draw_damage_overlay ( target, obj );
     }
     else
     {
@@ -468,6 +461,8 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
         shape.setFillColor ( color );
 
         target.draw ( shape );
+        if ( obj.kind == ObjectSnapshot::Kind::Block )
+            draw_damage_overlay ( target, obj );
     }
 }
 
@@ -490,6 +485,120 @@ void Renderer::draw_slingshot ( sf::RenderTarget& target, const SlingshotState& 
     draw_piece ( {sling.basePx.x, sling.basePx.y}, {14.f, 62.f} );
     draw_piece ( {sling.basePx.x - 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
     draw_piece ( {sling.basePx.x + 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
+}
+
+void Renderer::draw_damage_overlay ( sf::RenderTarget& target, const ObjectSnapshot& obj )
+{
+    if ( obj.kind != ObjectSnapshot::Kind::Block )
+        return;
+
+    const float hp = std::clamp ( obj.hpNormalized, 0.f, 1.f );
+    const float damage = 1.f - hp;
+    if ( damage < 0.22f )
+        return;
+
+    const float w = obj.radiusPx > 0.f ? obj.radiusPx * 2.f : obj.sizePx.x;
+    const float h = obj.radiusPx > 0.f ? obj.radiusPx * 2.f : obj.sizePx.y;
+    if ( w <= 1.f || h <= 1.f )
+        return;
+
+    auto crack_color = [this, damage] ( Material mat )
+    {
+        const uint8_t alpha = static_cast<uint8_t> (
+            std::clamp ( 62.f + damage * 154.f, 0.f, 220.f ) );
+        switch ( mat )
+        {
+        case Material::Wood:
+            return sf::Color ( 66, 40, 24, alpha );
+        case Material::Stone:
+            return sf::Color ( 92, 96, 106, alpha );
+        case Material::Glass:
+            return sf::Color ( 202, 244, 255, alpha );
+        case Material::Ice:
+            return sf::Color ( 228, 248, 255, alpha );
+        default:
+            return sf::Color ( 38, 38, 38, alpha );
+        }
+    };
+
+    const sf::Color c = crack_color ( obj.material );
+    const int crack_count = damage > 0.72f ? 7 : ( damage > 0.46f ? 5 : 3 );
+    const float half_w = w * 0.5f;
+    const float half_h = h * 0.5f;
+    const float max_r = std::min ( half_w, half_h ) * 0.94f;
+
+    auto clamp_local = [half_w, half_h, max_r, &obj] ( sf::Vector2f p )
+    {
+        if ( obj.radiusPx > 0.f )
+        {
+            const float len = std::sqrt ( p.x * p.x + p.y * p.y );
+            if ( len > max_r && len > 0.0001f )
+                p *= max_r / len;
+            return p;
+        }
+
+        p.x = std::clamp ( p.x, -half_w * 0.94f, half_w * 0.94f );
+        p.y = std::clamp ( p.y, -half_h * 0.94f, half_h * 0.94f );
+        return p;
+    };
+
+    auto to_world = [&obj] ( sf::Vector2f local )
+    {
+        const sf::Vector2f r = rotate_local ( local, obj.angleDeg );
+        return sf::Vector2f ( obj.positionPx.x + r.x, obj.positionPx.y + r.y );
+    };
+
+    sf::VertexArray crack_lines ( sf::PrimitiveType::Lines );
+    crack_lines.resize ( static_cast<std::size_t> ( crack_count * 6 ) );
+
+    std::size_t v = 0;
+    for ( int i = 0; i < crack_count; ++i )
+    {
+        const uint32_t seed = static_cast<uint32_t> ( obj.id ) * 1103515245u
+                              + static_cast<uint32_t> ( i ) * 12345u;
+        const float a0 = hash01 ( seed + 11u );
+        const float a1 = hash01 ( seed + 23u );
+        const float a2 = hash01 ( seed + 37u );
+        const float a3 = hash01 ( seed + 53u );
+
+        const float theta = a0 * 2.f * kPi;
+        const sf::Vector2f dir ( std::cos ( theta ), std::sin ( theta ) );
+        const sf::Vector2f normal ( -dir.y, dir.x );
+
+        sf::Vector2f center (
+            ( a1 - 0.5f ) * w * 0.50f,
+            ( a2 - 0.5f ) * h * 0.50f );
+        center = clamp_local ( center );
+
+        const float len = ( std::min ( w, h ) * ( 0.30f + a3 * 0.33f ) )
+                          * ( 0.85f + damage * 0.38f );
+        const float wobble = len * ( 0.10f + a2 * 0.08f );
+
+        sf::Vector2f p0 = clamp_local ( center - dir * ( len * 0.52f ) );
+        sf::Vector2f p1 = clamp_local ( center - dir * ( len * 0.16f ) + normal * wobble );
+        sf::Vector2f p2 = clamp_local ( center + dir * ( len * 0.14f ) - normal * wobble * 0.82f );
+        sf::Vector2f p3 = clamp_local ( center + dir * ( len * 0.52f ) );
+
+        const sf::Vector2f w0 = to_world ( p0 );
+        const sf::Vector2f w1 = to_world ( p1 );
+        const sf::Vector2f w2 = to_world ( p2 );
+        const sf::Vector2f w3 = to_world ( p3 );
+
+        crack_lines[v].position = w0;
+        crack_lines[v++].color = c;
+        crack_lines[v].position = w1;
+        crack_lines[v++].color = c;
+        crack_lines[v].position = w1;
+        crack_lines[v++].color = c;
+        crack_lines[v].position = w2;
+        crack_lines[v++].color = c;
+        crack_lines[v].position = w2;
+        crack_lines[v++].color = c;
+        crack_lines[v].position = w3;
+        crack_lines[v++].color = c;
+    }
+
+    target.draw ( crack_lines );
 }
 
 sf::Color Renderer::material_color ( Material mat )
