@@ -14,6 +14,15 @@ namespace
 constexpr float kWorldW = 1920.f;
 constexpr float kWorldH = 1080.f;
 constexpr float kGroundY = 700.f;
+constexpr float kPi = 3.14159265358979323846f;
+
+sf::Vector2f rotate_local ( sf::Vector2f v, float angle_deg )
+{
+    const float rad = angle_deg * kPi / 180.f;
+    const float cs = std::cos ( rad );
+    const float sn = std::sin ( rad );
+    return {v.x * cs - v.y * sn, v.x * sn + v.y * cs};
+}
 
 std::string projectile_label ( ProjectileType type )
 {
@@ -358,6 +367,52 @@ void Renderer::draw_object ( sf::RenderTarget& target, const ObjectSnapshot& obj
         sprite.setColor ( uses_hp ? tint_by_hp ( sf::Color::White, obj.hpNormalized )
                                   : sf::Color::White );
         target.draw ( sprite );
+
+        if ( obj.kind == ObjectSnapshot::Kind::Projectile
+             && obj.projectileType == ProjectileType::Bomber
+             && obj.radiusPx > 0.f )
+        {
+            static sf::Clock bomber_idle_clock;
+            const float t = bomber_idle_clock.getElapsedTime().asSeconds();
+            const float pulse = 0.5f + 0.5f * std::sin ( t * 7.0f + obj.positionPx.x * 0.012f );
+
+            const float aura_r = obj.radiusPx * ( 0.70f + pulse * 0.12f );
+            sf::CircleShape aura ( aura_r );
+            aura.setOrigin ( {aura_r, aura_r} );
+            aura.setPosition ( {obj.positionPx.x, obj.positionPx.y} );
+            aura.setFillColor ( sf::Color ( 255, 146, 70,
+                                            static_cast<uint8_t> ( 24.f + pulse * 32.f ) ) );
+            target.draw ( aura );
+
+            sf::CircleShape heat_ring ( obj.radiusPx * 0.64f );
+            heat_ring.setOrigin ( {obj.radiusPx * 0.64f, obj.radiusPx * 0.64f} );
+            heat_ring.setPosition ( {obj.positionPx.x, obj.positionPx.y + obj.radiusPx * 0.08f} );
+            heat_ring.setFillColor ( sf::Color::Transparent );
+            heat_ring.setOutlineThickness ( std::max ( 1.4f, obj.radiusPx * 0.08f ) );
+            heat_ring.setOutlineColor (
+                sf::Color ( 255, 192, 122, static_cast<uint8_t> ( 98.f + pulse * 70.f ) ) );
+            target.draw ( heat_ring );
+
+            const sf::Vector2f fuse_local ( obj.radiusPx * 0.62f, -obj.radiusPx * 0.78f );
+            const sf::Vector2f fuse_offset = rotate_local ( fuse_local, obj.angleDeg );
+            const sf::Vector2f fuse_tip ( obj.positionPx.x + fuse_offset.x,
+                                          obj.positionPx.y + fuse_offset.y );
+
+            const float spark_glow_r = std::max ( 3.5f, obj.radiusPx * ( 0.17f + pulse * 0.04f ) );
+            sf::CircleShape spark_glow ( spark_glow_r );
+            spark_glow.setOrigin ( {spark_glow_r, spark_glow_r} );
+            spark_glow.setPosition ( fuse_tip );
+            spark_glow.setFillColor (
+                sf::Color ( 255, 180, 98, static_cast<uint8_t> ( 120.f + pulse * 80.f ) ) );
+            target.draw ( spark_glow );
+
+            const float spark_core_r = std::max ( 1.8f, obj.radiusPx * 0.08f );
+            sf::CircleShape spark_core ( spark_core_r );
+            spark_core.setOrigin ( {spark_core_r, spark_core_r} );
+            spark_core.setPosition ( fuse_tip );
+            spark_core.setFillColor ( sf::Color ( 255, 240, 174, 228 ) );
+            target.draw ( spark_core );
+        }
         return;
     }
 

@@ -1,5 +1,6 @@
 #include "render/texture_manager.hpp"
 
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -247,31 +248,87 @@ void TextureManager::generate_all()
             sf::CircleShape body ( 104.f );
             body.setOrigin ( {104.f, 104.f} );
             body.setPosition ( {128.f, 128.f} );
-            body.setFillColor ( sf::Color ( 76, 78, 90 ) );
-            body.setOutlineThickness ( 12.f );
-            body.setOutlineColor ( sf::Color ( 38, 40, 50 ) );
+            body.setFillColor ( sf::Color ( 60, 64, 76 ) );
+            body.setOutlineThickness ( 13.f );
+            body.setOutlineColor ( sf::Color ( 30, 32, 40 ) );
             canvas.draw ( body );
 
-            sf::CircleShape ring ( 60.f );
-            ring.setOrigin ( {60.f, 60.f} );
-            ring.setPosition ( {128.f, 136.f} );
-            ring.setFillColor ( sf::Color::Transparent );
-            ring.setOutlineThickness ( 10.f );
-            ring.setOutlineColor ( sf::Color ( 255, 168, 76, 220 ) );
-            canvas.draw ( ring );
+            sf::CircleShape body_shadow ( 92.f );
+            body_shadow.setOrigin ( {92.f, 92.f} );
+            body_shadow.setPosition ( {132.f, 136.f} );
+            body_shadow.setFillColor ( sf::Color ( 10, 12, 16, 85 ) );
+            canvas.draw ( body_shadow );
 
-            sf::RectangleShape fuse ( {18.f, 52.f} );
-            fuse.setOrigin ( {9.f, 50.f} );
-            fuse.setPosition ( {176.f, 64.f} );
-            fuse.setRotation ( sf::degrees ( 20.f ) );
-            fuse.setFillColor ( sf::Color ( 232, 210, 176 ) );
-            canvas.draw ( fuse );
+            sf::CircleShape shine ( 38.f );
+            shine.setOrigin ( {38.f, 38.f} );
+            shine.setPosition ( {92.f, 90.f} );
+            shine.setFillColor ( sf::Color ( 188, 194, 214, 76 ) );
+            canvas.draw ( shine );
 
-            sf::CircleShape spark ( 10.f );
-            spark.setOrigin ( {10.f, 10.f} );
-            spark.setPosition ( {192.f, 28.f} );
-            spark.setFillColor ( sf::Color ( 255, 228, 120, 220 ) );
-            canvas.draw ( spark );
+            sf::CircleShape seam_ring ( 72.f );
+            seam_ring.setOrigin ( {72.f, 72.f} );
+            seam_ring.setPosition ( {128.f, 128.f} );
+            seam_ring.setFillColor ( sf::Color::Transparent );
+            seam_ring.setOutlineThickness ( 4.f );
+            seam_ring.setOutlineColor ( sf::Color ( 24, 26, 34, 178 ) );
+            canvas.draw ( seam_ring );
+
+            sf::CircleShape warning_ring ( 62.f );
+            warning_ring.setOrigin ( {62.f, 62.f} );
+            warning_ring.setPosition ( {128.f, 136.f} );
+            warning_ring.setFillColor ( sf::Color::Transparent );
+            warning_ring.setOutlineThickness ( 11.f );
+            warning_ring.setOutlineColor ( sf::Color ( 246, 146, 62, 226 ) );
+            canvas.draw ( warning_ring );
+
+            for ( int i = 0; i < 8; ++i )
+            {
+                const float angle = 6.2831853f * static_cast<float> ( i ) / 8.f;
+                const float x = 128.f + std::cos ( angle ) * 80.f;
+                const float y = 128.f + std::sin ( angle ) * 80.f;
+
+                sf::CircleShape rivet ( 7.f );
+                rivet.setOrigin ( {7.f, 7.f} );
+                rivet.setPosition ( {x, y} );
+                rivet.setFillColor ( sf::Color ( 124, 128, 142 ) );
+                rivet.setOutlineThickness ( 2.f );
+                rivet.setOutlineColor ( sf::Color ( 56, 58, 70 ) );
+                canvas.draw ( rivet );
+            }
+
+            sf::RectangleShape fuse_base ( {20.f, 58.f} );
+            fuse_base.setOrigin ( {10.f, 54.f} );
+            fuse_base.setPosition ( {178.f, 66.f} );
+            fuse_base.setRotation ( sf::degrees ( 21.f ) );
+            fuse_base.setFillColor ( sf::Color ( 228, 208, 172 ) );
+            canvas.draw ( fuse_base );
+
+            sf::RectangleShape fuse_thread ( {14.f, 52.f} );
+            fuse_thread.setOrigin ( {7.f, 48.f} );
+            fuse_thread.setPosition ( {177.f, 67.f} );
+            fuse_thread.setRotation ( sf::degrees ( 21.f ) );
+            fuse_thread.setFillColor ( sf::Color ( 174, 122, 82, 165 ) );
+            canvas.draw ( fuse_thread );
+
+            sf::CircleShape spark_glow ( 14.f );
+            spark_glow.setOrigin ( {14.f, 14.f} );
+            spark_glow.setPosition ( {194.f, 30.f} );
+            spark_glow.setFillColor ( sf::Color ( 255, 182, 92, 168 ) );
+            canvas.draw ( spark_glow );
+
+            sf::CircleShape spark_core ( 8.f );
+            spark_core.setOrigin ( {8.f, 8.f} );
+            spark_core.setPosition ( {194.f, 30.f} );
+            spark_core.setFillColor ( sf::Color ( 255, 234, 160, 228 ) );
+            canvas.draw ( spark_core );
+
+            sf::CircleShape cap ( 12.f );
+            cap.setOrigin ( {12.f, 12.f} );
+            cap.setPosition ( {171.f, 74.f} );
+            cap.setFillColor ( sf::Color ( 52, 54, 66 ) );
+            cap.setOutlineThickness ( 2.f );
+            cap.setOutlineColor ( sf::Color ( 102, 108, 128, 200 ) );
+            canvas.draw ( cap );
         } );
 
     textures_["proj_dropper"] = render_texture (
@@ -281,24 +338,72 @@ void TextureManager::generate_all()
             sf::CircleShape body ( 104.f );
             body.setOrigin ( {104.f, 104.f} );
             body.setPosition ( {128.f, 128.f} );
-            body.setFillColor ( sf::Color ( 80, 184, 146 ) );
-            body.setOutlineThickness ( 10.f );
-            body.setOutlineColor ( sf::Color ( 44, 116, 92 ) );
+            body.setFillColor ( sf::Color ( 74, 176, 140 ) );
+            body.setOutlineThickness ( 11.f );
+            body.setOutlineColor ( sf::Color ( 38, 102, 82 ) );
             canvas.draw ( body );
 
-            sf::RectangleShape shaft ( {20.f, 72.f} );
-            shaft.setOrigin ( {10.f, 36.f} );
-            shaft.setPosition ( {128.f, 128.f} );
-            shaft.setFillColor ( sf::Color ( 216, 255, 238, 210 ) );
-            canvas.draw ( shaft );
+            sf::CircleShape shine ( 36.f );
+            shine.setOrigin ( {36.f, 36.f} );
+            shine.setPosition ( {92.f, 88.f} );
+            shine.setFillColor ( sf::Color ( 198, 244, 224, 70 ) );
+            canvas.draw ( shine );
 
-            sf::ConvexShape arrow ( 3 );
-            arrow.setPoint ( 0, {0.f, 0.f} );
-            arrow.setPoint ( 1, {54.f, 0.f} );
-            arrow.setPoint ( 2, {27.f, 34.f} );
-            arrow.setFillColor ( sf::Color ( 216, 255, 238, 220 ) );
-            arrow.setPosition ( {101.f, 148.f} );
-            canvas.draw ( arrow );
+            sf::CircleShape cargo_ring ( 64.f );
+            cargo_ring.setOrigin ( {64.f, 64.f} );
+            cargo_ring.setPosition ( {128.f, 136.f} );
+            cargo_ring.setFillColor ( sf::Color::Transparent );
+            cargo_ring.setOutlineThickness ( 10.f );
+            cargo_ring.setOutlineColor ( sf::Color ( 186, 248, 226, 220 ) );
+            canvas.draw ( cargo_ring );
+
+            sf::RectangleShape hatch ( {72.f, 26.f} );
+            hatch.setOrigin ( {36.f, 13.f} );
+            hatch.setPosition ( {128.f, 166.f} );
+            hatch.setFillColor ( sf::Color ( 42, 126, 98, 220 ) );
+            hatch.setOutlineThickness ( 3.f );
+            hatch.setOutlineColor ( sf::Color ( 204, 252, 236, 184 ) );
+            canvas.draw ( hatch );
+
+            sf::RectangleShape latch ( {16.f, 12.f} );
+            latch.setOrigin ( {8.f, 6.f} );
+            latch.setPosition ( {128.f, 166.f} );
+            latch.setFillColor ( sf::Color ( 242, 252, 246, 220 ) );
+            canvas.draw ( latch );
+
+            sf::RectangleShape fin_left ( {42.f, 16.f} );
+            fin_left.setOrigin ( {42.f, 8.f} );
+            fin_left.setPosition ( {110.f, 132.f} );
+            fin_left.setRotation ( sf::degrees ( -26.f ) );
+            fin_left.setFillColor ( sf::Color ( 206, 250, 232, 168 ) );
+            canvas.draw ( fin_left );
+
+            sf::RectangleShape fin_right ( {42.f, 16.f} );
+            fin_right.setOrigin ( {0.f, 8.f} );
+            fin_right.setPosition ( {146.f, 132.f} );
+            fin_right.setRotation ( sf::degrees ( 26.f ) );
+            fin_right.setFillColor ( sf::Color ( 206, 250, 232, 168 ) );
+            canvas.draw ( fin_right );
+
+            sf::RectangleShape chain ( {8.f, 32.f} );
+            chain.setOrigin ( {4.f, 0.f} );
+            chain.setPosition ( {128.f, 178.f} );
+            chain.setFillColor ( sf::Color ( 196, 236, 220, 188 ) );
+            canvas.draw ( chain );
+
+            sf::CircleShape payload ( 18.f );
+            payload.setOrigin ( {18.f, 18.f} );
+            payload.setPosition ( {128.f, 214.f} );
+            payload.setFillColor ( sf::Color ( 124, 220, 184 ) );
+            payload.setOutlineThickness ( 3.f );
+            payload.setOutlineColor ( sf::Color ( 216, 252, 238, 210 ) );
+            canvas.draw ( payload );
+
+            sf::CircleShape payload_core ( 7.f );
+            payload_core.setOrigin ( {7.f, 7.f} );
+            payload_core.setPosition ( {128.f, 214.f} );
+            payload_core.setFillColor ( sf::Color ( 238, 255, 248, 220 ) );
+            canvas.draw ( payload_core );
         } );
 
     textures_["proj_boomerang"] = render_texture (

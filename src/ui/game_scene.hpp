@@ -13,6 +13,7 @@
 #include "ui/slingshot.hpp"
 
 #include <random>
+#include <vector>
 
 namespace angry
 {
@@ -20,6 +21,15 @@ namespace angry
 class GameScene : public Scene
 {
 private:
+    struct DropperPayloadGhost
+    {
+        sf::Vector2f position;
+        sf::Vector2f velocity;
+        float age = 0.f;
+        float lifetime = 0.62f;
+        float radius = 9.f;
+    };
+
     Renderer renderer_;
     SfxPlayer sfx_;
     Slingshot slingshot_;
@@ -55,6 +65,7 @@ private:
     float shake_strength_ = 0.f;
     std::mt19937 rng_ {std::random_device {} ()};
     std::uniform_real_distribution<float> shake_dist_ {-1.f, 1.f};
+    std::vector<DropperPayloadGhost> dropper_payload_ghosts_;
 
     static WorldSnapshot make_mock_snapshot();
     void finish_level();

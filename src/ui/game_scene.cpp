@@ -19,6 +19,7 @@ constexpr float kWorldAspect = kCameraWidth / kCameraHeight;
 constexpr float kImpactFlashDecay = 3.0f;
 constexpr float kStrongImpactThreshold = 8.0f;
 constexpr float kStrongImpactMax = 22.0f;
+constexpr float kPi = 3.14159265358979323846f;
 
 constexpr auto kPostFxFragmentShader = R"GLSL(
 uniform sampler2D texture;
@@ -616,6 +617,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     scores_path_ = scores_path;
     pending_scene_ = SceneId::None;
     end_delay_ = 0.f;
+    dropper_payload_ghosts_.clear();
 
     try
     {
@@ -884,6 +886,8 @@ void GameScene::process_events()
                         particles_.emit_ring ( pos, 22, glow, 176.f, 0.34f, 6.2f );
                         particles_.emit ( pos, 16, sf::Color ( 255, 212, 166, 188 ),
                                           148.f, 0.56f, 5.2f );
+                        particles_.emit ( pos, 14, sf::Color ( 255, 244, 202, 210 ),
+                                          116.f, 0.20f, 4.1f );
                     }
                     else if ( e.projectileType == ProjectileType::Dropper )
                     {
@@ -891,6 +895,16 @@ void GameScene::process_events()
                                                116.f, 0.26f, 3.6f );
                         particles_.emit ( pos + sf::Vector2f ( 0.f, 16.f ), 12, core,
                                           106.f, 0.42f, 3.9f );
+                        particles_.emit_shards ( pos + sf::Vector2f ( 0.f, 22.f ),
+                                                 14, sf::Color ( 202, 246, 224, 205 ),
+                                                 146.f, 0.44f, 3.7f, 520.f );
+
+                        DropperPayloadGhost ghost;
+                        ghost.position = pos + sf::Vector2f ( 0.f, 20.f );
+                        ghost.velocity = {0.f, 300.f};
+                        ghost.lifetime = 0.62f;
+                        ghost.radius = 9.f;
+                        dropper_payload_ghosts_.push_back ( ghost );
                     }
                     else if ( e.projectileType == ProjectileType::Boomerang )
                     {
@@ -946,9 +960,29 @@ void GameScene::update()
 {
     const float dt = std::clamp ( frame_clock_.restart().asSeconds(), 0.0f, 1.0f / 30.0f );
 
+    auto update_dropper_payload_ghosts = [this, dt] ()
+    {
+        for ( auto& ghost : dropper_payload_ghosts_ )
+        {
+            ghost.age += dt;
+            ghost.velocity.y += 720.f * dt;
+            ghost.velocity.x *= std::max ( 0.f, 1.f - dt * 3.0f );
+            ghost.position += ghost.velocity * dt;
+        }
+
+        dropper_payload_ghosts_.erase (
+            std::remove_if ( dropper_payload_ghosts_.begin(), dropper_payload_ghosts_.end(),
+                             [] ( const DropperPayloadGhost& ghost )
+                             {
+                                 return ghost.age >= ghost.lifetime || ghost.position.y > 1280.f;
+                             } ),
+            dropper_payload_ghosts_.end() );
+    };
+
     if ( snapshot_.status != LevelStatus::Running )
     {
         particles_.update ( dt );
+        update_dropper_payload_ghosts();
         end_delay_ += dt;
         if ( end_delay_ >= 1.5f && pending_scene_ == SceneId::None )
             finish_level();
@@ -969,9 +1003,46 @@ void GameScene::update()
             particles_.emit ( {obj.positionPx.x, obj.positionPx.y}, 2,
                               projectile_trail_color ( obj.projectileType ),
                               38.f, 0.20f, 3.5f );
+
+            if ( obj.projectileType == ProjectileType::Bomber && obj.radiusPx > 0.f )
+            {
+                static sf::Clock bomber_idle_clock;
+                const float t = bomber_idle_clock.getElapsedTime().asSeconds();
+                const float pulse = 0.5f + 0.5f * std::sin ( t * 14.f + obj.positionPx.x * 0.01f );
+                const float fuse_angle = ( obj.angleDeg - 52.f ) * kPi / 180.f;
+                const sf::Vector2f fuse_tip {
+                    obj.positionPx.x + std::cos ( fuse_angle ) * obj.radiusPx * 0.88f,
+                    obj.positionPx.y + std::sin ( fuse_angle ) * obj.radiusPx * 0.88f
+                };
+
+                particles_.emit ( fuse_tip, pulse > 0.72f ? 2 : 1,
+                                  sf::Color ( 255, 202, 132, 198 ),
+                                  52.f + pulse * 26.f, 0.16f, 2.8f );
+                particles_.emit ( fuse_tip, 1, sf::Color ( 255, 132, 82, 172 ),
+                                  36.f + pulse * 14.f, 0.12f, 2.1f );
+            }
+            else if ( obj.projectileType == ProjectileType::Dropper && obj.radiusPx > 0.f )
+            {
+                static sf::Clock dropper_idle_clock;
+                const float t = dropper_idle_clock.getElapsedTime().asSeconds();
+                const float pulse = 0.5f + 0.5f * std::sin ( t * 11.f + obj.positionPx.y * 0.012f );
+                const float pod_angle = ( obj.angleDeg + 90.f ) * kPi / 180.f;
+                const sf::Vector2f payload_port {
+                    obj.positionPx.x + std::cos ( pod_angle ) * obj.radiusPx * 0.72f,
+                    obj.positionPx.y + std::sin ( pod_angle ) * obj.radiusPx * 0.72f
+                };
+
+                particles_.emit ( payload_port, 1, sf::Color ( 190, 248, 228, 188 ),
+                                  48.f + pulse * 20.f, 0.14f, 2.5f );
+                particles_.emit ( payload_port + sf::Vector2f ( 0.f, 5.f ), 1,
+                                  sf::Color ( 98, 206, 170, 160 ),
+                                  30.f + pulse * 12.f, 0.12f, 2.0f );
+            }
             break;
         }
     }
+
+    update_dropper_payload_ghosts();
 
     if ( shake_time_ > 0.f )
     {
@@ -1029,6 +1100,45 @@ void GameScene::render ( sf::RenderWindow& window )
     world_pass_.setView ( world_view );
     renderer_.draw_snapshot ( world_pass_, snapshot_ );
     slingshot_.render ( world_pass_, snapshot_.slingshot );
+
+    for ( const auto& ghost : dropper_payload_ghosts_ )
+    {
+        const float life_t = std::clamp ( 1.f - ghost.age / ghost.lifetime, 0.f, 1.f );
+        const float radius = ghost.radius * ( 0.92f + 0.16f * life_t );
+        const sf::Vector2f pos = ghost.position;
+
+        sf::CircleShape glow ( radius * 1.6f );
+        glow.setOrigin ( {radius * 1.6f, radius * 1.6f} );
+        glow.setPosition ( pos );
+        glow.setFillColor ( sf::Color ( 118, 222, 184,
+                                        static_cast<uint8_t> ( 52.f * life_t ) ) );
+        world_pass_.draw ( glow );
+
+        sf::CircleShape shell ( radius );
+        shell.setOrigin ( {radius, radius} );
+        shell.setPosition ( pos );
+        shell.setFillColor ( sf::Color ( 96, 204, 166,
+                                         static_cast<uint8_t> ( 170.f * life_t ) ) );
+        shell.setOutlineThickness ( std::max ( 1.2f, radius * 0.2f ) );
+        shell.setOutlineColor ( sf::Color ( 198, 252, 232,
+                                            static_cast<uint8_t> ( 196.f * life_t ) ) );
+        world_pass_.draw ( shell );
+
+        sf::RectangleShape belt ( {radius * 1.25f, radius * 0.34f} );
+        belt.setOrigin ( {radius * 0.625f, radius * 0.17f} );
+        belt.setPosition ( pos );
+        belt.setFillColor ( sf::Color ( 36, 118, 94,
+                                        static_cast<uint8_t> ( 178.f * life_t ) ) );
+        world_pass_.draw ( belt );
+
+        sf::CircleShape core ( radius * 0.30f );
+        core.setOrigin ( {radius * 0.30f, radius * 0.30f} );
+        core.setPosition ( pos );
+        core.setFillColor ( sf::Color ( 236, 255, 246,
+                                        static_cast<uint8_t> ( 220.f * life_t ) ) );
+        world_pass_.draw ( core );
+    }
+
     particles_.render ( world_pass_ );
     world_pass_.display();
 
