@@ -18,13 +18,13 @@
     },
     "projectiles": [
         {
-            "type": "Striker"
+            "type": "Standard"
         },
         {
             "type": "Heavy"
         },
         {
-            "type": "Striker"
+            "type": "Standard"
         },
         {
             "type": "Heavy"

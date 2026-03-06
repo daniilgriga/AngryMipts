@@ -18,7 +18,7 @@
     },
     "projectiles": [
         {
-            "type": "Striker"
+            "type": "Standard"
         },
         {
             "type": "Splitter"
@@ -27,7 +27,7 @@
             "type": "Heavy"
         },
         {
-            "type": "Striker"
+            "type": "Standard"
         },
         {
             "type": "Splitter"

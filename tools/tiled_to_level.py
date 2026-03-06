@@ -109,15 +109,15 @@ def parse_float(value: object, default: float) -> float:
 def normalize_projectile_type(value: object) -> str:
     normalized = str(value or "").strip().lower()
     mapping = {
-        "striker": "Striker",
-        "standard": "Striker",
+        "striker": "Standard",
+        "standard": "Standard",
         "splitter": "Splitter",
         "dasher": "Dasher",
         "bomber": "Bomber",
         "dropper": "Dropper",
         "boomerang": "Boomerang",
-        "crusher": "Crusher",
-        "heavy": "Crusher",
+        "crusher": "Heavy",
+        "heavy": "Heavy",
         "bubbler": "Bubbler",
         "inflater": "Inflater",
     }
@@ -222,8 +222,9 @@ def build_slingshot(obj: dict, template_data: dict[str, object]) -> dict[str, ob
     properties = merge_properties(template_data, obj)
     width = float(obj.get("width", template_data.get("width", 0.0)) or 0.0)
     height = float(obj.get("height", template_data.get("height", 0.0)) or 0.0)
+    has_explicit_size = obj.get("width") is not None or obj.get("height") is not None
 
-    if width > 0.0 or height > 0.0:
+    if has_explicit_size and (width > 0.0 or height > 0.0):
         position = [
             int(round(float(obj.get("x", 0.0)) + width / 2.0)),
             int(round(float(obj.get("y", 0.0)) + height)),
@@ -238,6 +239,44 @@ def build_slingshot(obj: dict, template_data: dict[str, object]) -> dict[str, ob
         "position": position,
         "maxPull": parse_int(properties.get("maxPull"), DEFAULT_MAX_PULL),
     }
+
+
+def block_aabb(block: dict[str, object]) -> tuple[float, float, float, float]:
+    cx = float(block["position"][0])
+    cy = float(block["position"][1])
+    if block["shape"] == "circle":
+        r = float(block["radius"])
+        return cx - r, cx + r, cy - r, cy + r
+    w = float(block["size"][0])
+    h = float(block["size"][1])
+    return cx - w / 2.0, cx + w / 2.0, cy - h / 2.0, cy + h / 2.0
+
+
+def aabb_intersects(
+    lhs: tuple[float, float, float, float], rhs: tuple[float, float, float, float]
+) -> bool:
+    return not (
+        lhs[1] < rhs[0] or rhs[1] < lhs[0] or lhs[3] < rhs[2] or rhs[3] < lhs[2]
+    )
+
+
+def warn_if_slingshot_occluded(
+    slingshot: dict[str, object], blocks: list[dict[str, object]], warnings: list[str]
+) -> None:
+    # Matches renderer dimensions approximately: trunk width 14 px, fork spread +/-10 px,
+    # total visible height ~62 px above base.
+    sx = float(slingshot["position"][0])
+    sy = float(slingshot["position"][1])
+    slingshot_box = (sx - 10.0, sx + 10.0, sy - 62.0, sy)
+
+    for index, block in enumerate(blocks):
+        if aabb_intersects(slingshot_box, block_aabb(block)):
+            warnings.append(
+                "Slingshot overlaps block "
+                f"#{index} after conversion (slingshot={slingshot['position']}). "
+                "Move slingshot left/up in Tiled or move nearby blocks."
+            )
+            break
 
 
 def collect_layer_objects(layers: list[dict], layer_name: str) -> list[dict]:
@@ -340,12 +379,21 @@ def convert_map(map_path: Path) -> tuple[dict[str, object], list[str]]:
             )
 
     slingshot = build_slingshot(slingshot_objects[0], slingshot_template_data)
+    raw_slingshot_width = parse_float(slingshot_objects[0].get("width"), 0.0)
+    raw_slingshot_height = parse_float(slingshot_objects[0].get("height"), 0.0)
+    if raw_slingshot_width > 0.0 or raw_slingshot_height > 0.0:
+        warnings.append(
+            "Slingshot object has explicit width/height. Converter treats x/y as top-left "
+            "and uses bottom-center anchor. Prefer point-like slingshot objects "
+            "(width=0, height=0) for predictable placement."
+        )
     if slingshot["maxPull"] == DEFAULT_MAX_PULL and "maxPull" not in merge_properties(
         slingshot_template_data, slingshot_objects[0]
     ):
         warnings.append(
             f"Slingshot property 'maxPull' missing, using default {DEFAULT_MAX_PULL}."
         )
+    warn_if_slingshot_occluded(slingshot, blocks, warnings)
 
     level = {
         "meta": {
@@ -358,7 +406,7 @@ def convert_map(map_path: Path) -> tuple[dict[str, object], list[str]]:
         "projectiles": (
             [{"type": projectile_type} for projectile_type in projectile_types]
             if projectile_types
-            else [{"type": "Striker"} for _ in range(total_shots)]
+            else [{"type": "Standard"} for _ in range(total_shots)]
         ),
         "blocks": blocks,
         "targets": targets,
