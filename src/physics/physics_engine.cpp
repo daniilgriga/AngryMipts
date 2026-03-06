@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include <type_traits>
 #include <utility>
 
@@ -455,11 +456,12 @@ void PhysicsEngine::step(float dt)
         }
     }
 
-    std::vector<EntityId> destroyedIds;
-    for (BodyBinding& binding : bodies_)
+    for (std::size_t i = 0; i < bodies_.size();)
     {
+        BodyBinding& binding = bodies_[i];
         if (binding.kind != ObjectSnapshot::Kind::Block && binding.kind != ObjectSnapshot::Kind::Target)
         {
+            ++i;
             continue;
         }
         if (!binding.isDestructible)
@@ -470,64 +472,46 @@ void PhysicsEngine::step(float dt)
         const auto damageIt = pendingDamageById.find(binding.id);
         if (damageIt == pendingDamageById.end())
         {
+            ++i;
             continue;
         }
 
         binding.hp -= damageIt->second;
-        if (binding.hp <= 0.0f)
+        if (binding.hp > 0.0f)
         {
-            destroyedIds.push_back(binding.id);
-        }
-    }
-
-    for (const EntityId destroyedId : destroyedIds)
-    {
-        const auto it = std::find_if(
-            bodies_.begin(),
-            bodies_.end(),
-            [destroyedId](const BodyBinding& b)
-            {
-                return b.id == destroyedId;
-            });
-        if (it == bodies_.end())
-        {
+            ++i;
             continue;
         }
 
-        const bool isTarget = it->kind == ObjectSnapshot::Kind::Target;
-        const int scoreAwarded = isTarget ? it->scoreValue : 0;
-        const Vec2 eventPositionPx = it->bodyId.index1 != 0
-            ? worldToPx({b2Body_GetPosition(it->bodyId).x, b2Body_GetPosition(it->bodyId).y})
-            : it->lastPositionPx;
+        const bool isTarget = binding.kind == ObjectSnapshot::Kind::Target;
+        const int scoreAwarded = isTarget ? binding.scoreValue : 0;
+        const Vec2 eventPositionPx = binding.bodyId.index1 != 0
+            ? worldToPx({b2Body_GetPosition(binding.bodyId).x, b2Body_GetPosition(binding.bodyId).y})
+            : binding.lastPositionPx;
 
         events_.push_back(DestroyedEvent{
-            it->id,
+            binding.id,
             eventPositionPx,
-            it->material});
+            binding.material});
 
         if (isTarget)
         {
             scoreSystem_.add(scoreAwarded);
             snapshot_.score = scoreSystem_.score();
-            events_.push_back(TargetHitEvent{it->id, scoreAwarded});
+            events_.push_back(TargetHitEvent{binding.id, scoreAwarded});
             events_.push_back(ScoreChangedEvent{snapshot_.score});
         }
 
-        if (it->bodyId.index1 != 0)
+        if (binding.bodyId.index1 != 0)
         {
-            if (bodyIdEquals(it->bodyId, activeProjectileBodyId_))
-            {
-                activeProjectileBodyId_ = b2_nullBodyId;
-                activeProjectileSettledFrames_ = 0;
-                activeProjectileSettledTimeSec_ = 0.0f;
-                activeProjectileType_ = ProjectileType::Standard;
-                activeProjectileAbilityUsed_ = false;
-                tryPrepareNextProjectile();
-            }
-            destroyBody(it->bodyId);
+            destroyBody(binding.bodyId);
         }
 
-        bodies_.erase(it);
+        if (i + 1 < bodies_.size())
+        {
+            bodies_[i] = std::move(bodies_.back());
+        }
+        bodies_.pop_back();
     }
 
     // Apply rolling slowdown to all dynamic gameplay bodies touching surfaces.
@@ -608,24 +592,29 @@ void PhysicsEngine::step(float dt)
         }
     }
 
-    for (const EntityId projectileId : settledSecondaryProjectileIds)
+    if (!settledSecondaryProjectileIds.empty())
     {
-        const auto it = std::find_if(
-            bodies_.begin(),
-            bodies_.end(),
-            [projectileId](const BodyBinding& b)
+        const std::unordered_set<EntityId> settledIds(
+            settledSecondaryProjectileIds.begin(), settledSecondaryProjectileIds.end());
+        for (std::size_t i = 0; i < bodies_.size();)
+        {
+            if (settledIds.find(bodies_[i].id) == settledIds.end())
             {
-                return b.id == projectileId;
-            });
-        if (it == bodies_.end())
-        {
-            continue;
+                ++i;
+                continue;
+            }
+
+            if (B2_IS_NON_NULL(bodies_[i].bodyId) && b2Body_IsValid(bodies_[i].bodyId))
+            {
+                destroyBody(bodies_[i].bodyId);
+            }
+
+            if (i + 1 < bodies_.size())
+            {
+                bodies_[i] = std::move(bodies_.back());
+            }
+            bodies_.pop_back();
         }
-        if (B2_IS_NON_NULL(it->bodyId) && b2Body_IsValid(it->bodyId))
-        {
-            destroyBody(it->bodyId);
-        }
-        bodies_.erase(it);
     }
 
     if (!settledSecondaryProjectileIds.empty()
@@ -1156,56 +1145,62 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     {
                         destroyBody(bomberBodyId);
                     }
-                    const auto bomberIt = std::find_if(
-                        bodies_.begin(),
-                        bodies_.end(),
-                        [bomberId](const BodyBinding& b)
-                        {
-                            return b.id == bomberId;
-                        });
-                    if (bomberIt != bodies_.end())
+                    for (std::size_t i = 0; i < bodies_.size(); ++i)
                     {
-                        bodies_.erase(bomberIt);
-                    }
-
-                    for (const EntityId destroyedId : destroyedByExplosionIds)
-                    {
-                        const auto it = std::find_if(
-                            bodies_.begin(),
-                            bodies_.end(),
-                            [destroyedId](const BodyBinding& b)
-                            {
-                                return b.id == destroyedId;
-                            });
-                        if (it == bodies_.end())
+                        if (bodies_[i].id != bomberId)
                         {
                             continue;
                         }
 
-                        const bool isTarget = it->kind == ObjectSnapshot::Kind::Target;
-                        const int scoreAwarded = isTarget ? it->scoreValue : 0;
-                        const Vec2 eventPositionPx = it->bodyId.index1 != 0
-                            ? worldToPx({b2Body_GetPosition(it->bodyId).x, b2Body_GetPosition(it->bodyId).y})
-                            : it->lastPositionPx;
+                        if (i + 1 < bodies_.size())
+                        {
+                            bodies_[i] = std::move(bodies_.back());
+                        }
+                        bodies_.pop_back();
+                        break;
+                    }
+
+                    const std::unordered_set<EntityId> destroyedExplosionIds(
+                        destroyedByExplosionIds.begin(), destroyedByExplosionIds.end());
+                    for (std::size_t i = 0; i < bodies_.size();)
+                    {
+                        if (destroyedExplosionIds.find(bodies_[i].id)
+                            == destroyedExplosionIds.end())
+                        {
+                            ++i;
+                            continue;
+                        }
+
+                        BodyBinding& victim = bodies_[i];
+                        const bool isTarget = victim.kind == ObjectSnapshot::Kind::Target;
+                        const int scoreAwarded = isTarget ? victim.scoreValue : 0;
+                        const Vec2 eventPositionPx = victim.bodyId.index1 != 0
+                            ? worldToPx({b2Body_GetPosition(victim.bodyId).x, b2Body_GetPosition(victim.bodyId).y})
+                            : victim.lastPositionPx;
 
                         events_.push_back(DestroyedEvent{
-                            it->id,
+                            victim.id,
                             eventPositionPx,
-                            it->material});
+                            victim.material});
 
                         if (isTarget)
                         {
                             scoreSystem_.add(scoreAwarded);
                             snapshot_.score = scoreSystem_.score();
-                            events_.push_back(TargetHitEvent{it->id, scoreAwarded});
+                            events_.push_back(TargetHitEvent{victim.id, scoreAwarded});
                             events_.push_back(ScoreChangedEvent{snapshot_.score});
                         }
 
-                        if (it->bodyId.index1 != 0)
+                        if (victim.bodyId.index1 != 0)
                         {
-                            destroyBody(it->bodyId);
+                            destroyBody(victim.bodyId);
                         }
-                        bodies_.erase(it);
+
+                        if (i + 1 < bodies_.size())
+                        {
+                            bodies_[i] = std::move(bodies_.back());
+                        }
+                        bodies_.pop_back();
                     }
 
                     activeProjectileBodyId_ = b2_nullBodyId;

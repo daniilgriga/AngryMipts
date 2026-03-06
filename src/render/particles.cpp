@@ -10,7 +10,8 @@ namespace angry
 namespace
 {
 
-constexpr std::size_t kParticleHardCap = 2600;
+constexpr std::size_t kParticleHardCap = 1600;
+constexpr int kFrameEmitCap = 260;
 
 float rand_float ( float lo, float hi )
 {
@@ -28,7 +29,9 @@ void ParticleSystem::emit ( sf::Vector2f pos, int count, sf::Color color,
 
     const std::size_t available =
         kParticleHardCap > particles_.size() ? ( kParticleHardCap - particles_.size() ) : 0u;
+    const int frame_budget_left = std::max ( 0, kFrameEmitCap - emitted_this_frame_ );
     count = std::min ( count, static_cast<int> ( available ) );
+    count = std::min ( count, frame_budget_left );
     if ( count <= 0 )
         return;
 
@@ -45,6 +48,8 @@ void ParticleSystem::emit ( sf::Vector2f pos, int count, sf::Color color,
         p.drag = 0.6f;
         particles_.push_back ( p );
     }
+
+    emitted_this_frame_ += count;
 }
 
 void ParticleSystem::emit_ring ( sf::Vector2f pos, int count, sf::Color color,
@@ -55,7 +60,9 @@ void ParticleSystem::emit_ring ( sf::Vector2f pos, int count, sf::Color color,
 
     const std::size_t available =
         kParticleHardCap > particles_.size() ? ( kParticleHardCap - particles_.size() ) : 0u;
+    const int frame_budget_left = std::max ( 0, kFrameEmitCap - emitted_this_frame_ );
     count = std::min ( count, static_cast<int> ( available ) );
+    count = std::min ( count, frame_budget_left );
     if ( count <= 0 )
         return;
 
@@ -71,6 +78,8 @@ void ParticleSystem::emit_ring ( sf::Vector2f pos, int count, sf::Color color,
         p.drag = 0.25f;
         particles_.push_back ( p );
     }
+
+    emitted_this_frame_ += count;
 }
 
 void ParticleSystem::emit_shards ( sf::Vector2f pos, int count, sf::Color color,
@@ -82,7 +91,9 @@ void ParticleSystem::emit_shards ( sf::Vector2f pos, int count, sf::Color color,
 
     const std::size_t available =
         kParticleHardCap > particles_.size() ? ( kParticleHardCap - particles_.size() ) : 0u;
+    const int frame_budget_left = std::max ( 0, kFrameEmitCap - emitted_this_frame_ );
     count = std::min ( count, static_cast<int> ( available ) );
+    count = std::min ( count, frame_budget_left );
     if ( count <= 0 )
         return;
 
@@ -103,10 +114,14 @@ void ParticleSystem::emit_shards ( sf::Vector2f pos, int count, sf::Color color,
         p.drag = 1.2f;
         particles_.push_back ( p );
     }
+
+    emitted_this_frame_ += count;
 }
 
 void ParticleSystem::update ( float dt )
 {
+    emitted_this_frame_ = 0;
+
     for ( auto& p : particles_ )
     {
         p.age += dt;
@@ -126,8 +141,10 @@ void ParticleSystem::update ( float dt )
 
 void ParticleSystem::render ( sf::RenderTarget& target )
 {
-    for ( const auto& p : particles_ )
+    const std::size_t draw_stride = particles_.size() > 1100 ? 2u : 1u;
+    for ( std::size_t i = 0; i < particles_.size(); i += draw_stride )
     {
+        const auto& p = particles_[i];
         const float alpha = std::clamp ( 1.f - ( p.age / p.lifetime ), 0.f, 1.f );
         float cur_size = p.size * alpha;
         const float base_alpha = static_cast<float> ( p.color.a ) / 255.f;

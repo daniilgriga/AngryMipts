@@ -667,11 +667,14 @@ void GameScene::finish_level()
 void GameScene::process_events()
 {
     auto events = physics_.drainEvents();
-    int collision_vfx_budget = 18;
+    int collision_vfx_budget = 12;
+    int destroyed_vfx_budget = 8;
+    int ability_vfx_budget = 8;
     for ( const auto& ev : events )
     {
         std::visit (
-            [this, &collision_vfx_budget] ( const auto& e )
+            [this, &collision_vfx_budget, &destroyed_vfx_budget, &ability_vfx_budget]
+            ( const auto& e )
             {
                 using T = std::decay_t<decltype ( e )>;
 
@@ -682,7 +685,7 @@ void GameScene::process_events()
                     --collision_vfx_budget;
 
                     const float impulse = std::clamp ( e.impulse, 0.f, 30.f );
-                    if ( impulse < 1.8f )
+                    if ( impulse < 2.2f )
                         return;
 
                     sf::Vector2f pos ( e.contactPointPx.x, e.contactPointPx.y );
@@ -740,6 +743,14 @@ void GameScene::process_events()
                 }
                 else if constexpr ( std::is_same_v<T, DestroyedEvent> )
                 {
+                    if ( destroyed_vfx_budget <= 0 )
+                    {
+                        sfx_.play_destroyed ( e.material );
+                        impact_flash_ = std::max ( impact_flash_, 0.06f );
+                        return;
+                    }
+                    --destroyed_vfx_budget;
+
                     sf::Vector2f pos ( e.positionPx.x, e.positionPx.y );
                     const MaterialVfxProfile& profile = vfx_profile ( e.material );
                     sfx_.play_destroyed ( e.material );
@@ -818,6 +829,16 @@ void GameScene::process_events()
                     dustCount = std::max ( 2, dustCount );
                     shardCount = std::max ( 3, shardCount );
 
+                    constexpr float kDestroyVfxScale = 0.76f;
+                    burstCount = std::max ( 3, static_cast<int> (
+                        std::round ( static_cast<float> ( burstCount ) * kDestroyVfxScale ) ) );
+                    dustCount = std::max ( 2, static_cast<int> (
+                        std::round ( static_cast<float> ( dustCount ) * kDestroyVfxScale ) ) );
+                    shardCount = std::max ( 3, static_cast<int> (
+                        std::round ( static_cast<float> ( shardCount ) * kDestroyVfxScale ) ) );
+                    ringCount = std::max ( 8, static_cast<int> (
+                        std::round ( static_cast<float> ( ringCount ) * kDestroyVfxScale ) ) );
+
                     particles_.emit ( pos, burstCount,
                                       profile.sparkColor, profile.shardSpeed,
                                       0.58f, profile.shardSize );
@@ -845,6 +866,13 @@ void GameScene::process_events()
                 }
                 else if constexpr ( std::is_same_v<T, AbilityActivatedEvent> )
                 {
+                    if ( ability_vfx_budget <= 0 )
+                    {
+                        sfx_.play_ability ( e.projectileType );
+                        return;
+                    }
+                    --ability_vfx_budget;
+
                     const sf::Vector2f pos ( e.positionPx.x, e.positionPx.y );
                     const sf::Color core = ability_core_color ( e.projectileType );
                     const sf::Color glow = ability_glow_color ( e.projectileType );
@@ -1131,7 +1159,8 @@ void GameScene::render ( sf::RenderWindow& window )
     particles_.render ( world_pass_ );
     world_pass_.display();
 
-    if ( bloom_ready_ )
+    const bool bloom_this_frame = bloom_ready_ && particles_.size() < 900u;
+    if ( bloom_this_frame )
     {
         const sf::Vector2u bloom_size = bloom_extract_pass_.getSize();
         const float texel_x = 1.f / static_cast<float> ( std::max ( 1u, bloom_size.x ) );
@@ -1178,7 +1207,7 @@ void GameScene::render ( sf::RenderWindow& window )
         window.draw ( world_sprite );
     }
 
-    if ( bloom_ready_ )
+    if ( bloom_this_frame )
     {
         sf::Sprite bloom_sprite ( bloom_pong_pass_.getTexture() );
         const float boosted_flash = std::clamp ( impact_flash_ * 2.0f, 0.f, 0.5f );

@@ -33,6 +33,7 @@ class ParticleSystem
 {
 private:
     std::vector<Particle> particles_;
+    int emitted_this_frame_ = 0;
 
 public:
     void emit ( sf::Vector2f pos, int count, sf::Color color, float speed,
@@ -43,6 +44,7 @@ public:
                        float lifetime, float size, float angular_speed );
     void update ( float dt );
     void render ( sf::RenderTarget& target );
+    std::size_t size() const { return particles_.size(); }
     bool empty() const { return particles_.empty(); }
 };
 
