@@ -75,6 +75,16 @@ inline bool isDestructibleKind(ObjectSnapshot::Kind kind)
     return kind == ObjectSnapshot::Kind::Block || kind == ObjectSnapshot::Kind::Target;
 }
 
+inline float projectileDamageMultiplier(ProjectileType projectileType)
+{
+    if (projectileType == ProjectileType::Heavy)
+    {
+        return 1.35f;
+    }
+
+    return 1.0f;
+}
+
 inline bool isBodyOnSurface(b2BodyId bodyId)
 {
     const int contactCapacity = b2Body_GetContactCapacity(bodyId);
@@ -291,12 +301,16 @@ void PhysicsEngine::step(float dt)
 
         if (aIsProjectile && bIsDestructible)
         {
-            applyScaledDamage(bindingB, baseDamage);
+            applyScaledDamage(
+                bindingB,
+                baseDamage * projectileDamageMultiplier(bindingA->projectileType));
             continue;
         }
         if (bIsProjectile && aIsDestructible)
         {
-            applyScaledDamage(bindingA, baseDamage);
+            applyScaledDamage(
+                bindingA,
+                baseDamage * projectileDamageMultiplier(bindingB->projectileType));
             continue;
         }
         if (aIsProjectile && bIsProjectile)
@@ -1177,10 +1191,15 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
 
     float radiusPx = 12.0f;
     float density = 1.0f;
-    if (type == ProjectileType::Dasher)
+    if (type == ProjectileType::Heavy)
+    {
+        radiusPx = 15.0f;
+        density = 2.2f;
+    }
+    else if (type == ProjectileType::Dasher)
     {
         radiusPx = 14.0f;
-        density = 1.7f;
+        density = 1.15f;
     }
     else if (type == ProjectileType::Bomber)
     {
