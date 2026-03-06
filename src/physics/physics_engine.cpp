@@ -796,7 +796,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                 }
                 else if (activeProjectileType_ == ProjectileType::Inflater)
                 {
-                    constexpr float kInflatedRadiusPx = 22.0f;
+                    constexpr float kInflatedRadiusPx = 40.0f;
                     constexpr float kInflatedDensity = 0.75f;
                     constexpr float kInflateSpeedDamp = 0.85f;
 
