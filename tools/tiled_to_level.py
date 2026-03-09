@@ -255,8 +255,9 @@ def block_aabb(block: dict[str, object]) -> tuple[float, float, float, float]:
 def aabb_intersects(
     lhs: tuple[float, float, float, float], rhs: tuple[float, float, float, float]
 ) -> bool:
+    # Treat edge contact as non-overlap: slingshot base may rest on a block top.
     return not (
-        lhs[1] < rhs[0] or rhs[1] < lhs[0] or lhs[3] < rhs[2] or rhs[3] < lhs[2]
+        lhs[1] <= rhs[0] or rhs[1] <= lhs[0] or lhs[3] <= rhs[2] or rhs[3] <= lhs[2]
     )
 
 
@@ -267,7 +268,8 @@ def warn_if_slingshot_occluded(
     # total visible height ~62 px above base.
     sx = float(slingshot["position"][0])
     sy = float(slingshot["position"][1])
-    slingshot_box = (sx - 10.0, sx + 10.0, sy - 62.0, sy)
+    # Ignore exact contact at the base y: this lets the slingshot stand on a block top.
+    slingshot_box = (sx - 10.0, sx + 10.0, sy - 62.0, sy - 1.0)
 
     for index, block in enumerate(blocks):
         if aabb_intersects(slingshot_box, block_aabb(block)):
