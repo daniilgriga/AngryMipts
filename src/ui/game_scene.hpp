@@ -30,6 +30,22 @@ private:
         float radius = 9.f;
     };
 
+    struct InflaterExpandRing
+    {
+        sf::Vector2f position;
+        float age = 0.f;
+        float lifetime = 0.55f;  // total expand duration
+        float maxRadius = 80.f;  // final radius of the ring
+    };
+
+    struct BubbleFloat
+    {
+        sf::Vector2f position;
+        float age = 0.f;
+        float lifetime = 1.4f;
+        float radius = 0.f;
+    };
+
     Renderer renderer_;
     SfxPlayer sfx_;
     Slingshot slingshot_;
@@ -65,6 +81,8 @@ private:
     std::mt19937 rng_ {std::random_device {} ()};
     std::uniform_real_distribution<float> shake_dist_ {-1.f, 1.f};
     std::vector<DropperPayloadGhost> dropper_payload_ghosts_;
+    std::vector<InflaterExpandRing>  inflater_rings_;
+    std::vector<BubbleFloat>         bubble_floats_;
     bool render_targets_dirty_ = true;
 
     static WorldSnapshot make_mock_snapshot();
