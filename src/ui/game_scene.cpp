@@ -1004,6 +1004,11 @@ void GameScene::process_events()
                             bf.lifetime = 1.0f + static_cast<float> ( b % 4 ) * 0.25f;
                             bubble_floats_.push_back ( bf );
                         }
+
+                        // Capture zone — used in render() to overlay bubbles on lifted objects
+                        BubbleCaptureZone zone;
+                        zone.center = pos;
+                        bubble_capture_zones_.push_back ( zone );
                     }
 
                     shake_time_ = std::max ( shake_time_, cfg.shakeTime );
@@ -1106,6 +1111,13 @@ void GameScene::update()
             std::remove_if ( bubble_floats_.begin(), bubble_floats_.end(),
                              [] ( const BubbleFloat& b ) { return b.age >= b.lifetime; } ),
             bubble_floats_.end() );
+
+        for ( auto& z : bubble_capture_zones_ )
+            z.age += dt;
+        bubble_capture_zones_.erase (
+            std::remove_if ( bubble_capture_zones_.begin(), bubble_capture_zones_.end(),
+                             [] ( const BubbleCaptureZone& z ) { return z.age >= z.lifetime; } ),
+            bubble_capture_zones_.end() );
     };
 
     if ( snapshot_.status != LevelStatus::Running )
@@ -1327,6 +1339,71 @@ void GameScene::render ( sf::RenderWindow& window )
         highlight.setFillColor ( sf::Color ( 255, 255, 255,
                                               static_cast<uint8_t> ( 110.f * life_t ) ) );
         world_pass_.draw ( highlight );
+    }
+
+    // Bubbler: draw bubble overlay around objects caught in capture zone
+    if ( !bubble_capture_zones_.empty() )
+    {
+        for ( const auto& zone : bubble_capture_zones_ )
+        {
+            const float life_t  = std::clamp ( 1.f - zone.age / zone.lifetime, 0.f, 1.f );
+            const float pop_t   = zone.age / zone.lifetime;
+            // Pulsing shimmer speed increases as bubbles near popping
+            const float shimmer = 0.5f + 0.5f * std::sin ( zone.age * 6.f + pop_t * 4.f );
+            const float cap_r   = zone.captureRadius;
+
+            for ( const auto& obj : snapshot_.objects )
+            {
+                if ( !obj.isActive )
+                    continue;
+                // Only non-static blocks/targets can be lifted
+                if ( obj.isStatic )
+                    continue;
+                if ( obj.kind != ObjectSnapshot::Kind::Block
+                     && obj.kind != ObjectSnapshot::Kind::Target )
+                    continue;
+
+                const sf::Vector2f opos ( obj.positionPx.x, obj.positionPx.y );
+                const float dx = opos.x - zone.center.x;
+                const float dy = opos.y - zone.center.y;
+                if ( dx * dx + dy * dy > cap_r * cap_r )
+                    continue;
+
+                // Compute bubble radius to wrap the object
+                const float obj_half = obj.radiusPx > 0.f
+                    ? obj.radiusPx
+                    : std::max ( obj.sizePx.x, obj.sizePx.y ) * 0.5f;
+                const float br = obj_half * 1.35f + 4.f;
+
+                // Outer glow
+                sf::CircleShape glow_o ( br * 1.4f );
+                glow_o.setOrigin ( {br * 1.4f, br * 1.4f} );
+                glow_o.setPosition ( opos );
+                glow_o.setFillColor ( sf::Color ( 160, 228, 255,
+                    static_cast<uint8_t> ( 30.f * life_t * ( 0.7f + 0.3f * shimmer ) ) ) );
+                world_pass_.draw ( glow_o );
+
+                // Bubble shell
+                sf::CircleShape shell_o ( br );
+                shell_o.setOrigin ( {br, br} );
+                shell_o.setPosition ( opos );
+                shell_o.setFillColor ( sf::Color ( 200, 242, 255,
+                    static_cast<uint8_t> ( 22.f * life_t ) ) );
+                shell_o.setOutlineThickness ( 1.8f );
+                shell_o.setOutlineColor ( sf::Color ( 180, 235, 255,
+                    static_cast<uint8_t> ( 180.f * life_t * ( 0.6f + 0.4f * shimmer ) ) ) );
+                world_pass_.draw ( shell_o );
+
+                // Small highlight dot (top-left of bubble)
+                const float hr = br * 0.22f;
+                sf::CircleShape hl ( hr );
+                hl.setOrigin ( {hr, hr} );
+                hl.setPosition ( opos + sf::Vector2f ( -br * 0.38f, -br * 0.44f ) );
+                hl.setFillColor ( sf::Color ( 255, 255, 255,
+                    static_cast<uint8_t> ( 120.f * life_t ) ) );
+                world_pass_.draw ( hl );
+            }
+        }
     }
 
     particles_.render ( world_pass_ );

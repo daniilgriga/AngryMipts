@@ -46,6 +46,15 @@ private:
         float radius = 0.f;
     };
 
+    // Tracks active Bubbler capture zone so we can overlay bubbles on lifted objects
+    struct BubbleCaptureZone
+    {
+        sf::Vector2f center;
+        float captureRadius = 140.f;  // matches physics capture radius
+        float age = 0.f;
+        float lifetime = 1.1f;        // matches physics bubble duration
+    };
+
     Renderer renderer_;
     SfxPlayer sfx_;
     Slingshot slingshot_;
@@ -81,8 +90,9 @@ private:
     std::mt19937 rng_ {std::random_device {} ()};
     std::uniform_real_distribution<float> shake_dist_ {-1.f, 1.f};
     std::vector<DropperPayloadGhost> dropper_payload_ghosts_;
-    std::vector<InflaterExpandRing>  inflater_rings_;
-    std::vector<BubbleFloat>         bubble_floats_;
+    std::vector<InflaterExpandRing>   inflater_rings_;
+    std::vector<BubbleFloat>          bubble_floats_;
+    std::vector<BubbleCaptureZone>    bubble_capture_zones_;
     bool render_targets_dirty_ = true;
 
     static WorldSnapshot make_mock_snapshot();
