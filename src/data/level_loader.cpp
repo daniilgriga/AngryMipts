@@ -96,6 +96,16 @@ std::string requireString( const Json& value, const std::string& context )
     return value.get<std::string>();
 }
 
+bool requireBool( const Json& value, const std::string& context )
+{
+    if ( !value.is_boolean() )
+    {
+        throw std::runtime_error( context + ": expected boolean" );
+    }
+
+    return value.get<bool>();
+}
+
 Vec2 parseVec2( const Json& value, const std::string& context )
 {
     if ( !value.is_array() || value.size() != 2 )
@@ -297,6 +307,34 @@ BlockData parseBlock( const Json& value, std::size_t index )
         throw std::runtime_error( context + ".hp: expected value > 0" );
     }
 
+    if ( const auto it = value.find( "static" ); it != value.end() )
+    {
+        block.isStatic = requireBool( *it, context + ".static" );
+    }
+    else if ( const auto it = value.find( "isStatic" ); it != value.end() )
+    {
+        block.isStatic = requireBool( *it, context + ".isStatic" );
+    }
+
+    if ( const auto it = value.find( "indestructible" ); it != value.end() )
+    {
+        block.isIndestructible = requireBool( *it, context + ".indestructible" );
+    }
+    else if ( const auto it = value.find( "isIndestructible" ); it != value.end() )
+    {
+        block.isIndestructible = requireBool( *it, context + ".isIndestructible" );
+    }
+
+    // Nondestructible blocks in this project are treated as fully static obstacles.
+    if ( block.isIndestructible )
+    {
+        block.isStatic = true;
+    }
+    if ( block.isStatic )
+    {
+        block.isIndestructible = true;
+    }
+
     const std::string shape =
         requireString( requireField( value, "shape", context ), context + ".shape" );
     if ( shape == "rect" )
@@ -307,6 +345,7 @@ BlockData parseBlock( const Json& value, std::size_t index )
             throw std::runtime_error( context + ".size: width and height must be > 0" );
         }
         block.radiusPx = 0.0f;
+        block.shape = BlockShape::Rect;
     }
     else if ( shape == "circle" )
     {
@@ -317,10 +356,21 @@ BlockData parseBlock( const Json& value, std::size_t index )
             throw std::runtime_error( context + ".radius: expected value > 0" );
         }
         block.sizePx = { 0.0f, 0.0f };
+        block.shape = BlockShape::Circle;
+    }
+    else if ( shape == "triangle" )
+    {
+        block.sizePx = parseVec2( requireField( value, "size", context ), context + ".size" );
+        if ( block.sizePx.x <= 0.0f || block.sizePx.y <= 0.0f )
+        {
+            throw std::runtime_error( context + ".size: width and height must be > 0" );
+        }
+        block.radiusPx = 0.0f;
+        block.shape = BlockShape::Triangle;
     }
     else
     {
-        throw std::runtime_error( context + ".shape: expected 'rect' or 'circle'" );
+        throw std::runtime_error( context + ".shape: expected 'rect', 'circle' or 'triangle'" );
     }
 
     return block;

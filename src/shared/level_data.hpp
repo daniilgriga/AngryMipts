@@ -7,11 +7,21 @@
 namespace angry
 {
 
+enum class BlockShape : uint8_t
+{
+    Rect,
+    Circle,
+    Triangle,
+};
+
 struct BlockData
 {
     Vec2 positionPx;
     Vec2 sizePx;
-    float radiusPx;  // 0 if rectangle
+    float radiusPx;  // >0 only for circle blocks
+    BlockShape shape = BlockShape::Rect;
+    bool isStatic = false;         // completely immovable in physics
+    bool isIndestructible = false; // ignores damage and never breaks
     float angleDeg;
     Material material;
     float hp;

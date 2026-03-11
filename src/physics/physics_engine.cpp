@@ -25,6 +25,7 @@ constexpr float kProjectileSettledRemoveDelaySec = 1.5f;
 constexpr float kDamageMinSpeedMps = 1.0f;
 constexpr float kDamageScale = 16.0f;
 constexpr float kBlockVsBlockDamageMultiplier = 0.15f;
+constexpr float kGroundTopYpx = 600.0f;
 
 inline float clampValue(float value, float minVal, float maxVal)
 {
@@ -193,7 +194,7 @@ void PhysicsEngine::loadLevel(const LevelData& level)
     snapshot_.stars = 0;
     snapshot_.physicsStepMs = 0.0f;
 
-    float supportBottomPx = 700.0f;
+    float supportBottomPx = kGroundTopYpx;
     for (const BlockData& block : level.blocks)
     {
         float bottomPx = block.positionPx.y;
@@ -209,7 +210,7 @@ void PhysicsEngine::loadLevel(const LevelData& level)
     }
 
     supportBottomPx_ = supportBottomPx;
-    groundTopYpx_ = 700.0f;
+    groundTopYpx_ = kGroundTopYpx;
     levelYOffsetPx_ = groundTopYpx_ - supportBottomPx_;
     createGround(groundTopYpx_);
 
@@ -290,8 +291,8 @@ void PhysicsEngine::step(float dt)
         const float baseDamage = effectiveSpeed * kDamageScale;
         const bool aIsProjectile = bindingA->kind == ObjectSnapshot::Kind::Projectile;
         const bool bIsProjectile = bindingB->kind == ObjectSnapshot::Kind::Projectile;
-        const bool aIsDestructible = isDestructibleKind(bindingA->kind);
-        const bool bIsDestructible = isDestructibleKind(bindingB->kind);
+        const bool aIsDestructible = isDestructibleKind(bindingA->kind) && bindingA->isDestructible;
+        const bool bIsDestructible = isDestructibleKind(bindingB->kind) && bindingB->isDestructible;
 
         auto applyScaledDamage = [&pendingDamageById](const BodyBinding* binding, float damage)
         {
@@ -329,6 +330,10 @@ void PhysicsEngine::step(float dt)
     for (BodyBinding& binding : bodies_)
     {
         if (binding.kind != ObjectSnapshot::Kind::Block && binding.kind != ObjectSnapshot::Kind::Target)
+        {
+            continue;
+        }
+        if (!binding.isDestructible)
         {
             continue;
         }
@@ -406,6 +411,10 @@ void PhysicsEngine::step(float dt)
         if (binding.kind != ObjectSnapshot::Kind::Block
             && binding.kind != ObjectSnapshot::Kind::Target
             && binding.kind != ObjectSnapshot::Kind::Projectile)
+        {
+            continue;
+        }
+        if (binding.kind != ObjectSnapshot::Kind::Projectile && binding.isStatic)
         {
             continue;
         }
@@ -925,6 +934,11 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             continue;
                         }
 
+                        if (candidate.isStatic && candidate.kind != ObjectSnapshot::Kind::Projectile)
+                        {
+                            continue;
+                        }
+
                         const float rawFalloff = 1.0f - (distance / explosionRadiusWorld);
                         const float falloff = clampValue(rawFalloff, 0.0f, kExplosionCloseRangeLimiter);
                         const float safeDistance = std::max(distance, 0.0001f);
@@ -936,8 +950,9 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                                 dir.y * kExplosionImpulse * falloff},
                             true);
 
-                        if (candidate.kind == ObjectSnapshot::Kind::Block
+                        if ((candidate.kind == ObjectSnapshot::Kind::Block
                             || candidate.kind == ObjectSnapshot::Kind::Target)
+                            && candidate.isDestructible)
                         {
                             const float damage =
                                 kExplosionMaxDamage * falloff * materialDamageMultiplier(candidate.material);
@@ -1082,19 +1097,22 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
         return;
     }
 
+    const bool isCircle = block.shape == BlockShape::Circle || block.radiusPx > 0.0f;
+    const bool isTriangle = block.shape == BlockShape::Triangle;
+
     b2BodyDef bodyDef = b2DefaultBodyDef();
-    bodyDef.type = b2_dynamicBody;
+    bodyDef.type = block.isStatic ? b2_staticBody : b2_dynamicBody;
     Vec2 adjustedPositionPx = block.positionPx;
     adjustedPositionPx.y += levelYOffsetPx_;
 
-    const float originalBottomPx = block.radiusPx > 0.0f
+    const float originalBottomPx = isCircle
         ? block.positionPx.y + block.radiusPx
         : block.positionPx.y + (block.sizePx.y * 0.5f);
 
     // Force support blocks ("legs") to start exactly on the floor level.
     if (std::abs(originalBottomPx - supportBottomPx_) < 0.5f)
     {
-        const float halfHeightPx = block.radiusPx > 0.0f
+        const float halfHeightPx = isCircle
             ? block.radiusPx
             : (block.sizePx.y * 0.5f);
         adjustedPositionPx.y = groundTopYpx_ - halfHeightPx;
@@ -1111,12 +1129,34 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     shapeDef.restitution = 0.08f;
     shapeDef.enableHitEvents = true;
 
-    if (block.radiusPx > 0.0f)
+    if (isCircle)
     {
         b2Circle circle = {};
         circle.center = b2Vec2{0.0f, 0.0f};
         circle.radius = block.radiusPx / PIXELS_PER_METER;
         b2CreateCircleShape(bodyId, &shapeDef, &circle);
+    }
+    else if (isTriangle)
+    {
+        const float halfWidthM = (block.sizePx.x * 0.5f) / PIXELS_PER_METER;
+        const float halfHeightM = (block.sizePx.y * 0.5f) / PIXELS_PER_METER;
+        const b2Vec2 vertices[3] = {
+            b2Vec2{-halfWidthM, halfHeightM},
+            b2Vec2{halfWidthM, halfHeightM},
+            b2Vec2{0.0f, -halfHeightM},
+        };
+
+        const b2Hull hull = b2ComputeHull(vertices, 3);
+        if (hull.count == 3 && b2ValidateHull(&hull))
+        {
+            const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
+            b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+        }
+        else
+        {
+            const b2Polygon fallbackBox = b2MakeBox(halfWidthM, halfHeightM);
+            b2CreatePolygonShape(bodyId, &shapeDef, &fallbackBox);
+        }
     }
     else
     {
@@ -1135,6 +1175,8 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     binding.material = block.material;
     binding.hp = std::max(1.0f, block.hp);
     binding.maxHp = binding.hp;
+    binding.isStatic = block.isStatic;
+    binding.isDestructible = !block.isIndestructible && !block.isStatic;
     binding.lastPositionPx = adjustedPositionPx;
     binding.lastAngleDeg = block.angleDeg;
     bodies_.push_back(binding);

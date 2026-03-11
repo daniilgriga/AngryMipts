@@ -39,6 +39,8 @@ private:
         Material material = Material::Wood;
         float hp = 1.0f;
         float maxHp = 1.0f;
+        bool isStatic = false;
+        bool isDestructible = true;
         int scoreValue = 0;
         Vec2 lastPositionPx{};
         float lastAngleDeg = 0.0f;
@@ -74,7 +76,7 @@ private:
     bool paused_ = false;
     float levelYOffsetPx_ = 0.0f;
     float supportBottomPx_ = 0.0f;
-    float groundTopYpx_ = 700.0f;
+    float groundTopYpx_ = 600.0f;
 
     int nextProjectileIndex_ = 0;
     b2BodyId activeProjectileBodyId_ = b2_nullBodyId;
