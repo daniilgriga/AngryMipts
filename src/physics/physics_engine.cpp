@@ -25,7 +25,18 @@ constexpr float kProjectileSettledRemoveDelaySec = 1.5f;
 constexpr float kDamageMinSpeedMps = 1.0f;
 constexpr float kDamageScale = 16.0f;
 constexpr float kBlockVsBlockDamageMultiplier = 0.15f;
+constexpr float kFloorImpactDamageMultiplier = 0.75f;
+constexpr float kFloorContactMinNormalY = 0.75f;
+constexpr float kFloorContactBandTopPx = 30.0f;
+constexpr float kFloorContactBandBottomPx = 60.0f;
 constexpr float kGroundTopYpx = 600.0f;
+constexpr float kBubblerCaptureRadiusPx = 140.0f;
+constexpr float kBubblerBubbleDurationSec = 1.10f;
+constexpr float kBubblerLiftAccelMps2 = 18.0f;
+constexpr float kBubblerLiftLinearDamping = 1.1f;
+constexpr float kBubblerLiftAngularDamping = 2.0f;
+constexpr float kBubblerBurstDownImpulseMps = 1.8f;
+constexpr float kBubblerMaxUpwardSpeedMps = 3.8f;
 
 inline float clampValue(float value, float minVal, float maxVal)
 {
@@ -66,6 +77,23 @@ inline float materialDamageMultiplier(Material material)
             return 1.35f;
         case Material::Ice:
             return 1.2f;
+    }
+
+    return 1.0f;
+}
+
+inline float floorHitMaxDamageFraction(Material material)
+{
+    switch (material)
+    {
+        case Material::Wood:
+            return 0.35f;
+        case Material::Stone:
+            return 0.22f;
+        case Material::Glass:
+            return 1.0f;
+        case Material::Ice:
+            return 1.0f;
     }
 
     return 1.0f;
@@ -259,6 +287,61 @@ void PhysicsEngine::step(float dt)
     }
 
     const float clampedDt = clampValue(dt, 0.0f, 1.0f / 30.0f);
+
+    for (BodyBinding& binding : bodies_)
+    {
+        if (!binding.isBubbled)
+        {
+            continue;
+        }
+        if (B2_IS_NULL(binding.bodyId) || !b2Body_IsValid(binding.bodyId))
+        {
+            binding.isBubbled = false;
+            binding.bubbleTimeSec = 0.0f;
+            continue;
+        }
+        if (binding.kind != ObjectSnapshot::Kind::Block
+            && binding.kind != ObjectSnapshot::Kind::Target)
+        {
+            binding.isBubbled = false;
+            binding.bubbleTimeSec = 0.0f;
+            continue;
+        }
+        if (binding.isStatic || b2Body_GetType(binding.bodyId) != b2_dynamicBody)
+        {
+            binding.isBubbled = false;
+            binding.bubbleTimeSec = 0.0f;
+            continue;
+        }
+
+        const float mass = std::max(0.01f, b2Body_GetMass(binding.bodyId));
+        b2Body_ApplyForceToCenter(
+            binding.bodyId,
+            b2Vec2{0.0f, -mass * kBubblerLiftAccelMps2},
+            true);
+        b2Vec2 bubbleVel = b2Body_GetLinearVelocity(binding.bodyId);
+        if (bubbleVel.y < -kBubblerMaxUpwardSpeedMps)
+        {
+            bubbleVel.y = -kBubblerMaxUpwardSpeedMps;
+            b2Body_SetLinearVelocity(binding.bodyId, bubbleVel);
+        }
+        b2Body_SetAwake(binding.bodyId, true);
+
+        binding.bubbleTimeSec -= clampedDt;
+        if (binding.bubbleTimeSec <= 0.0f)
+        {
+            binding.isBubbled = false;
+            binding.bubbleTimeSec = 0.0f;
+            b2Body_SetGravityScale(binding.bodyId, 1.0f);
+            b2Body_SetLinearDamping(binding.bodyId, 0.0f);
+            b2Body_SetAngularDamping(binding.bodyId, 0.0f);
+            b2Body_ApplyLinearImpulseToCenter(
+                binding.bodyId,
+                b2Vec2{0.0f, mass * kBubblerBurstDownImpulseMps},
+                true);
+        }
+    }
+
     b2World_Step(worldId_, clampedDt, 4);
 
     // Apply damage from contact hit events and remove destroyed bodies.
@@ -271,6 +354,52 @@ void PhysicsEngine::step(float dt)
         const b2BodyId bodyB = b2Shape_GetBody(hit.shapeIdB);
         BodyBinding* bindingA = findBinding(bodyA);
         BodyBinding* bindingB = findBinding(bodyB);
+
+        const bool onlyAKnown = bindingA != nullptr && bindingB == nullptr;
+        const bool onlyBKnown = bindingA == nullptr && bindingB != nullptr;
+        if (onlyAKnown || onlyBKnown)
+        {
+            BodyBinding* dynamicBinding = onlyAKnown ? bindingA : bindingB;
+            if (dynamicBinding == nullptr
+                || !isDestructibleKind(dynamicBinding->kind)
+                || !dynamicBinding->isDestructible
+                || dynamicBinding->isStatic)
+            {
+                continue;
+            }
+
+            // Ground/wall/ceiling are static world geometry and have no binding.
+            // Apply damage here only for impacts near the floor top.
+            const Vec2 contactPointPx = worldToPx({hit.point.x, hit.point.y});
+            const bool isNearFloor =
+                contactPointPx.y >= (groundTopYpx_ - kFloorContactBandTopPx)
+                && contactPointPx.y <= (groundTopYpx_ + kFloorContactBandBottomPx);
+            const bool hasFloorLikeNormal = std::abs(hit.normal.y) >= kFloorContactMinNormalY;
+            if (!isNearFloor || !hasFloorLikeNormal)
+            {
+                continue;
+            }
+
+            const float effectiveSpeed = std::max(0.0f, hit.approachSpeed - kDamageMinSpeedMps);
+            if (effectiveSpeed <= 0.0f)
+            {
+                continue;
+            }
+
+            const float damage =
+                effectiveSpeed * kDamageScale * kFloorImpactDamageMultiplier;
+            const float scaledDamage = damage * materialDamageMultiplier(dynamicBinding->material);
+            const float cappedDamage = std::min(
+                scaledDamage,
+                std::max(0.0f, dynamicBinding->hp) * floorHitMaxDamageFraction(dynamicBinding->material));
+            if (cappedDamage <= 0.0f)
+            {
+                continue;
+            }
+            pendingDamageById[dynamicBinding->id] += cappedDamage;
+            continue;
+        }
+
         if (bindingA == nullptr || bindingB == nullptr)
         {
             continue;
@@ -817,6 +946,65 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         activeProjectileType_,
                         posPx});
                 }
+                else if (activeProjectileType_ == ProjectileType::Bubbler)
+                {
+                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+                    const Vec2 centerPx = worldToPx({worldPos.x, worldPos.y});
+                    const float captureRadiusWorld = kBubblerCaptureRadiusPx / PIXELS_PER_METER;
+                    bool capturedAny = false;
+
+                    for (BodyBinding& candidate : bodies_)
+                    {
+                        if (B2_IS_NULL(candidate.bodyId) || !b2Body_IsValid(candidate.bodyId))
+                        {
+                            continue;
+                        }
+                        if (bodyIdEquals(candidate.bodyId, activeProjectileBodyId_))
+                        {
+                            continue;
+                        }
+                        if (candidate.kind != ObjectSnapshot::Kind::Block
+                            && candidate.kind != ObjectSnapshot::Kind::Target)
+                        {
+                            continue;
+                        }
+                        if (candidate.isStatic || b2Body_GetType(candidate.bodyId) != b2_dynamicBody)
+                        {
+                            continue;
+                        }
+
+                        const b2Vec2 candidatePos = b2Body_GetPosition(candidate.bodyId);
+                        const float dx = candidatePos.x - worldPos.x;
+                        const float dy = candidatePos.y - worldPos.y;
+                        const float distance = std::sqrt(dx * dx + dy * dy);
+                        if (distance > captureRadiusWorld)
+                        {
+                            continue;
+                        }
+
+                        candidate.isBubbled = true;
+                        candidate.bubbleTimeSec = kBubblerBubbleDurationSec;
+                        b2Body_SetGravityScale(candidate.bodyId, 0.0f);
+                        b2Body_SetLinearDamping(candidate.bodyId, kBubblerLiftLinearDamping);
+                        b2Body_SetAngularDamping(candidate.bodyId, kBubblerLiftAngularDamping);
+
+                        const float mass = std::max(0.01f, b2Body_GetMass(candidate.bodyId));
+                        b2Body_ApplyLinearImpulseToCenter(
+                            candidate.bodyId,
+                            b2Vec2{0.0f, -mass * 1.2f},
+                            true);
+                        capturedAny = true;
+                    }
+
+                    activeProjectileAbilityUsed_ = true;
+                    events_.push_back(AbilityActivatedEvent{
+                        projectile->id,
+                        activeProjectileType_,
+                        centerPx});
+
+                    // Keep gameplay deterministic: ability is consumed even if no body was captured.
+                    (void)capturedAny;
+                }
                 else if (activeProjectileType_ == ProjectileType::Inflater)
                 {
                     constexpr float kInflatedRadiusPx = 40.0f;
@@ -1341,7 +1529,10 @@ void PhysicsEngine::updateLevelStatus()
 
     if (snapshot_.shotsRemaining == 0 && !hasAliveProjectiles())
     {
-        snapshot_.status = LevelStatus::Lose;
+        const bool hasOneStarScore =
+            currentLevel_.meta.star1Threshold > 0
+            && scoreSystem_.score() >= currentLevel_.meta.star1Threshold;
+        snapshot_.status = hasOneStarScore ? LevelStatus::Win : LevelStatus::Lose;
     }
     else
     {

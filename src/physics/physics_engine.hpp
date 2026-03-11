@@ -41,6 +41,8 @@ private:
         float maxHp = 1.0f;
         bool isStatic = false;
         bool isDestructible = true;
+        bool isBubbled = false;
+        float bubbleTimeSec = 0.0f;
         int scoreValue = 0;
         Vec2 lastPositionPx{};
         float lastAngleDeg = 0.0f;
