@@ -1,12 +1,16 @@
 #include "ui/game_scene.hpp"
 
 #include "data/logger.hpp"
+#include "shared/world_config.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 namespace angry
@@ -14,9 +18,6 @@ namespace angry
 namespace
 {
 
-constexpr float kCameraWidth = 1280.f;
-constexpr float kCameraHeight = 720.f;
-constexpr float kWorldAspect = kCameraWidth / kCameraHeight;
 constexpr float kImpactFlashDecay = 3.0f;
 constexpr float kStrongImpactThreshold = 8.0f;
 constexpr float kStrongImpactMax = 22.0f;
@@ -91,15 +92,15 @@ void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
     const float window_aspect =
         static_cast<float> ( window_size.x ) / static_cast<float> ( window_size.y );
 
-    if ( window_aspect > kWorldAspect )
+    if ( window_aspect > world::kAspect )
     {
-        const float width = kWorldAspect / window_aspect;
+        const float width = world::kAspect / window_aspect;
         const float left = ( 1.f - width ) * 0.5f;
         view.setViewport ( sf::FloatRect ( {left, 0.f}, {width, 1.f} ) );
     }
-    else if ( window_aspect < kWorldAspect )
+    else if ( window_aspect < world::kAspect )
     {
-        const float height = window_aspect / kWorldAspect;
+        const float height = window_aspect / world::kAspect;
         const float top = ( 1.f - height ) * 0.5f;
         view.setViewport ( sf::FloatRect ( {0.f, top}, {1.f, height} ) );
     }
@@ -136,6 +137,32 @@ std::string resolveProjectPath( const std::filesystem::path& relativePath )
 #endif
 
     return relativePath.string();
+}
+
+std::string two_digit ( int value )
+{
+    std::ostringstream out;
+    out << std::setw ( 2 ) << std::setfill ( '0' ) << value;
+    return out.str();
+}
+
+std::string resolveLevelPath ( int levelId )
+{
+    const std::array<std::string, 3> candidates = {
+        "levels/level_0" + std::to_string ( levelId ) + ".json",
+        "levels/level_" + two_digit ( levelId ) + ".json",
+        "levels/level_" + std::to_string ( levelId ) + ".json",
+    };
+
+    for ( const std::string& candidate : candidates )
+    {
+        const std::string resolved = resolveProjectPath ( candidate );
+        if ( std::filesystem::exists ( resolved ) )
+            return resolved;
+    }
+
+    // Keep old error surface if none exists.
+    return resolveProjectPath ( candidates.front() );
 }
 
 sf::Color projectile_trail_color ( ProjectileType type )
@@ -552,7 +579,8 @@ WorldSnapshot GameScene::make_mock_snapshot()
         return o;
     };
 
-    snap.objects.push_back ( make_block ( id++, {640.f, 700.f}, {1280.f, 40.f}, Material::Stone ) );
+    snap.objects.push_back (
+        make_block ( id++, {640.f, 700.f}, {world::kWidthPx, 40.f}, Material::Stone ) );
     snap.objects.push_back ( make_block ( id++, {800.f, 580.f}, {20.f, 100.f}, Material::Wood ) );
     snap.objects.push_back ( make_block ( id++, {900.f, 580.f}, {20.f, 100.f}, Material::Wood ) );
     snap.objects.push_back ( make_block ( id++, {850.f, 520.f}, {140.f, 20.f}, Material::Wood, 0.8f ) );
@@ -572,11 +600,12 @@ WorldSnapshot GameScene::make_mock_snapshot()
 }
 
 GameScene::GameScene ( const sf::Font& font )
-    : snapshot_ ( make_mock_snapshot() )
-    , physics_ ( PhysicsMode::Threaded )
+    : physics_ ( PhysicsMode::Threaded )
+    , snapshot_ ( make_mock_snapshot() )
     , font_ ( font )
     , hud_text_ ( font_, "", 20 )
-    , game_view_ ( sf::FloatRect ( {0.f, 0.f}, {kCameraWidth, kCameraHeight} ) )
+    , game_view_ (
+          sf::FloatRect ( {0.f, 0.f}, {world::kWidthPx, world::kHeightPx} ) )
 {
     hud_text_.setFillColor ( sf::Color::White );
     hud_text_.setPosition ( {20.f, 20.f} );
@@ -674,8 +703,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
 
     try
     {
-        const std::string path = resolveProjectPath (
-            "levels/level_0" + std::to_string ( level_id ) + ".json" );
+        const std::string path = resolveLevelPath ( level_id );
         const LevelData level = level_loader_.load ( path );
         physics_.registerLevel ( level );
         physics_.loadLevel ( level );
@@ -1096,7 +1124,8 @@ void GameScene::update()
             std::remove_if ( dropper_payload_ghosts_.begin(), dropper_payload_ghosts_.end(),
                              [] ( const DropperPayloadGhost& ghost )
                              {
-                                 return ghost.age >= ghost.lifetime || ghost.position.y > 1280.f;
+                                 return ghost.age >= ghost.lifetime
+                                        || ghost.position.y > ( world::kHeightPx + 560.f );
                              } ),
             dropper_payload_ghosts_.end() );
     };

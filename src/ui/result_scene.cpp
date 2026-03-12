@@ -34,54 +34,6 @@ float bounce_in ( float t )
     return t * t * ( ( s + 1.f ) * t + s ) + 1.f;
 }
 
-void draw_star ( sf::RenderWindow& window, sf::Vector2f center, float radius,
-                 bool filled, float pulse, bool win )
-{
-    // Outer glow
-    if ( filled )
-    {
-        sf::CircleShape glow ( radius * 1.55f );
-        glow.setOrigin ( {radius * 1.55f, radius * 1.55f} );
-        glow.setPosition ( center );
-        const uint8_t ga = static_cast<uint8_t> ( 38.f + pulse * 28.f );
-        glow.setFillColor ( win ? sf::Color ( 255, 240, 80, ga )
-                                : sf::Color ( 255, 200, 80, ga ) );
-        window.draw ( glow );
-    }
-
-    // Star body: 5-pointed polygon via ConvexShape
-    const int   points    = 10;
-    const float outer_r   = radius;
-    const float inner_r   = radius * 0.42f;
-    const float angle_off = -3.14159f / 2.f;  // point up
-
-    sf::ConvexShape star ( points );
-    for ( int i = 0; i < points; ++i )
-    {
-        const float angle = angle_off + static_cast<float> ( i ) * 3.14159f / 5.f;
-        const float r     = ( i % 2 == 0 ) ? outer_r : inner_r;
-        star.setPoint ( i, { std::cos ( angle ) * r, std::sin ( angle ) * r } );
-    }
-    star.setPosition ( center );
-
-    if ( filled )
-    {
-        const uint8_t brightness = static_cast<uint8_t> ( 220.f + pulse * 35.f );
-        star.setFillColor ( win ? sf::Color ( brightness, static_cast<uint8_t>(brightness * 0.89f), 60, 255 )
-                                : sf::Color ( brightness, static_cast<uint8_t>(brightness * 0.78f), 80, 255 ) );
-        star.setOutlineThickness ( 1.5f );
-        star.setOutlineColor ( sf::Color ( 255, 200, 20, 180 ) );
-    }
-    else
-    {
-        star.setFillColor ( sf::Color ( 60, 70, 90, 160 ) );
-        star.setOutlineThickness ( 1.5f );
-        star.setOutlineColor ( sf::Color ( 100, 120, 150, 120 ) );
-    }
-
-    window.draw ( star );
-}
-
 }  // namespace
 
 ResultScene::ResultScene ( const sf::Font& font )

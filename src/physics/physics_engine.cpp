@@ -1,6 +1,7 @@
 #include "physics_engine.hpp"
 
 #include "physics_units.hpp"
+#include "shared/world_config.hpp"
 
 #include <box2d/box2d.h>
 
@@ -30,7 +31,7 @@ constexpr float kFloorImpactDamageMultiplier = 0.75f;
 constexpr float kFloorContactMinNormalY = 0.75f;
 constexpr float kFloorContactBandTopPx = 30.0f;
 constexpr float kFloorContactBandBottomPx = 60.0f;
-constexpr float kGroundTopYpx = 600.0f;
+constexpr float kGroundTopYpx = world::kGroundTopYpx;
 constexpr float kBubblerCaptureRadiusPx = 140.0f;
 constexpr float kBubblerBubbleDurationSec = 1.10f;
 constexpr float kBubblerLiftAccelMps2 = 18.0f;
@@ -1306,20 +1307,22 @@ void PhysicsEngine::createGround(float topYpx)
     shapeDef.friction = 0.9f;
     shapeDef.restitution = 0.05f;
 
-    const float halfWidthM = 1400.0f / PIXELS_PER_METER;
-    const float halfHeightM = 20.0f / PIXELS_PER_METER;
+    const float halfWidthM =
+        (world::kWidthPx + world::kBoundaryExtraWidthPx) / PIXELS_PER_METER;
+    const float halfHeightM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
     const float centerYpx = topYpx + (halfHeightM * PIXELS_PER_METER);
-    const b2Vec2 centerM = b2Vec2{640.0f / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
+    const b2Vec2 centerM =
+        b2Vec2{(world::kWidthPx * 0.5f) / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
     const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, 0.0f);
 
     b2CreatePolygonShape(groundBodyId, &shapeDef, &groundPolygon);
 
     // World bounds so projectile collides with screen borders instead of flying away.
-    const float wallHalfWidthM = 20.0f / PIXELS_PER_METER;
-    const float wallHalfHeightM = 900.0f / PIXELS_PER_METER;
-    const float leftWallCenterXPx = -10.0f;
-    const float rightWallCenterXPx = 1290.0f;
-    const float wallCenterYPx = 360.0f;
+    const float wallHalfWidthM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
+    const float wallHalfHeightM = world::kBoundaryHalfHeightPx / PIXELS_PER_METER;
+    const float leftWallCenterXPx = -world::kBoundaryThicknessPx * 0.5f;
+    const float rightWallCenterXPx = world::kWidthPx + world::kBoundaryThicknessPx * 0.5f;
+    const float wallCenterYPx = world::kHeightPx * 0.5f;
 
     const b2Polygon leftWall = b2MakeOffsetBox(
         wallHalfWidthM,
@@ -1333,12 +1336,14 @@ void PhysicsEngine::createGround(float topYpx)
         b2Vec2{rightWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER}, 0.0f);
     b2CreatePolygonShape(groundBodyId, &shapeDef, &rightWall);
 
-    const float ceilingHalfHeightM = 20.0f / PIXELS_PER_METER;
-    const float ceilingCenterYPx = -20.0f;
+    const float ceilingHalfHeightM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
+    const float ceilingCenterYPx = -world::kBoundaryThicknessPx;
     const b2Polygon ceiling = b2MakeOffsetBox(
         halfWidthM,
         ceilingHalfHeightM,
-        b2Vec2{640.0f / PIXELS_PER_METER, ceilingCenterYPx / PIXELS_PER_METER}, 0.0f);
+        b2Vec2{(world::kWidthPx * 0.5f) / PIXELS_PER_METER,
+               ceilingCenterYPx / PIXELS_PER_METER},
+        0.0f);
     b2CreatePolygonShape(groundBodyId, &shapeDef, &ceiling);
 }
 
