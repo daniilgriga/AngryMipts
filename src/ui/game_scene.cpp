@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
@@ -22,6 +23,9 @@ constexpr float kImpactFlashDecay = 3.0f;
 constexpr float kStrongImpactThreshold = 8.0f;
 constexpr float kStrongImpactMax = 22.0f;
 constexpr float kPi = 3.14159265358979323846f;
+constexpr std::size_t kMaxQueuedEvents = 1200u;
+constexpr int kMinEventsPerFrame = 28;
+constexpr int kMaxEventsPerFrame = 110;
 
 constexpr auto kPostFxFragmentShader = R"GLSL(
 uniform sampler2D texture;
@@ -604,11 +608,13 @@ GameScene::GameScene ( const sf::Font& font )
     , snapshot_ ( make_mock_snapshot() )
     , font_ ( font )
     , hud_text_ ( font_, "", 20 )
+    , perf_text_ ( font_, "", 11 )
     , game_view_ (
           sf::FloatRect ( {0.f, 0.f}, {world::kWidthPx, world::kHeightPx} ) )
 {
     hud_text_.setFillColor ( sf::Color::White );
     hud_text_.setPosition ( {20.f, 20.f} );
+    perf_text_.setFillColor ( sf::Color ( 224, 240, 255, 170 ) );
 
     if ( sf::Shader::isAvailable() )
     {
@@ -699,6 +705,10 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     pending_scene_ = SceneId::None;
     end_delay_ = 0.f;
     dropper_payload_ghosts_.clear();
+    pending_events_.clear();
+    smoothed_dt_sec_ = 1.0f / 60.0f;
+    smoothed_fps_ = 60.0f;
+    vfx_load_factor_ = 1.0f;
     render_targets_dirty_ = true;
 
     try
@@ -757,12 +767,37 @@ void GameScene::finish_level()
 
 void GameScene::process_events()
 {
-    auto events = physics_.drainEvents();
-    int collision_vfx_budget = 12;
-    int destroyed_vfx_budget = 8;
-    int ability_vfx_budget = 8;
-    for ( const auto& ev : events )
+    auto fresh_events = physics_.drainEvents();
+    for ( auto& ev : fresh_events )
     {
+        pending_events_.push_back ( std::move ( ev ) );
+    }
+
+    if ( pending_events_.size() > kMaxQueuedEvents )
+    {
+        const std::size_t overflow = pending_events_.size() - kMaxQueuedEvents;
+        pending_events_.erase ( pending_events_.begin(),
+                                pending_events_.begin() + static_cast<std::ptrdiff_t> ( overflow ) );
+    }
+
+    const float quality = std::clamp ( vfx_load_factor_, 0.42f, 1.0f );
+    const int events_budget = std::clamp (
+        static_cast<int> ( std::round (
+            static_cast<float> ( kMinEventsPerFrame )
+            + ( static_cast<float> ( kMaxEventsPerFrame - kMinEventsPerFrame ) * quality ) ) ),
+        kMinEventsPerFrame, kMaxEventsPerFrame );
+
+    int collision_vfx_budget = std::max ( 3, static_cast<int> ( std::round ( 12.f * quality ) ) );
+    int destroyed_vfx_budget = std::max ( 3, static_cast<int> ( std::round ( 8.f * quality ) ) );
+    int ability_vfx_budget = std::max ( 2, static_cast<int> ( std::round ( 8.f * quality ) ) );
+
+    int processed_events = 0;
+    while ( processed_events < events_budget && !pending_events_.empty() )
+    {
+        Event ev = std::move ( pending_events_.front() );
+        pending_events_.pop_front();
+        ++processed_events;
+
         std::visit (
             [this, &collision_vfx_budget, &destroyed_vfx_budget, &ability_vfx_budget]
             ( const auto& e )
@@ -1092,6 +1127,9 @@ SceneId GameScene::handle_input ( const sf::Event& event )
 
         if ( key->code == sf::Keyboard::Key::Space )
             command_queue_.push ( ActivateAbilityCmd{INVALID_ID} );
+
+        if ( key->code == sf::Keyboard::Key::F3 )
+            show_perf_overlay_ = !show_perf_overlay_;
     }
 
     if ( snapshot_.status == LevelStatus::Running && window_ptr_ )
@@ -1108,7 +1146,20 @@ SceneId GameScene::handle_input ( const sf::Event& event )
 
 void GameScene::update()
 {
-    const float dt = std::clamp ( frame_clock_.restart().asSeconds(), 0.0f, 1.0f / 30.0f );
+    const float raw_dt = frame_clock_.restart().asSeconds();
+    const float dt = std::clamp ( raw_dt, 0.0f, 1.0f / 30.0f );
+
+    const float perf_dt = std::clamp ( raw_dt, 1.0f / 240.0f, 0.25f );
+    smoothed_dt_sec_ = smoothed_dt_sec_ * 0.90f + perf_dt * 0.10f;
+    smoothed_fps_ = 1.0f / std::max ( smoothed_dt_sec_, 1.0f / 240.0f );
+
+    const float fps_pressure = std::clamp ( ( 58.0f - smoothed_fps_ ) / 25.0f, 0.0f, 1.0f );
+    const float particle_pressure = std::clamp (
+        ( static_cast<float> ( particles_.size() ) - 720.0f ) / 760.0f, 0.0f, 1.0f );
+    const float queue_pressure = std::clamp (
+        ( static_cast<float> ( pending_events_.size() ) - 220.0f ) / 700.0f, 0.0f, 1.0f );
+    const float pressure = std::max ( fps_pressure, std::max ( particle_pressure, queue_pressure ) );
+    vfx_load_factor_ = 1.0f - 0.55f * pressure;
 
     auto update_dropper_payload_ghosts = [this, dt] ()
     {
@@ -1180,11 +1231,14 @@ void GameScene::update()
     snapshot_ = physics_.getSnapshot();
     process_events();
 
+    const bool low_vfx = vfx_load_factor_ < 0.72f;
+    const int trail_emit_count = low_vfx ? 1 : 2;
+
     for ( const auto& obj : snapshot_.objects )
     {
         if ( obj.isActive && obj.kind == ObjectSnapshot::Kind::Projectile )
         {
-            particles_.emit ( {obj.positionPx.x, obj.positionPx.y}, 2,
+            particles_.emit ( {obj.positionPx.x, obj.positionPx.y}, trail_emit_count,
                               projectile_trail_color ( obj.projectileType ),
                               38.f, 0.20f, 3.5f );
 
@@ -1195,11 +1249,11 @@ void GameScene::update()
                 const float t     = heavy_idle_clock.getElapsedTime().asSeconds();
                 const float pulse = 0.5f + 0.5f * std::sin ( t * 8.f );
                 const sf::Vector2f pos { obj.positionPx.x, obj.positionPx.y };
-                particles_.emit ( pos, 3,
+                particles_.emit ( pos, low_vfx ? 2 : 3,
                                   sf::Color ( 148, 90, 220,
                                               static_cast<uint8_t> ( 140.f + pulse * 50.f ) ),
                                   60.f + pulse * 30.f, 0.28f, 5.2f );
-                particles_.emit ( pos, 2,
+                particles_.emit ( pos, low_vfx ? 1 : 2,
                                   sf::Color ( 200, 160, 255,
                                               static_cast<uint8_t> ( 90.f + pulse * 40.f ) ),
                                   40.f, 0.18f, 3.8f );
@@ -1215,7 +1269,7 @@ void GameScene::update()
                     obj.positionPx.y + std::sin ( fuse_angle ) * obj.radiusPx * 0.88f
                 };
 
-                particles_.emit ( fuse_tip, pulse > 0.72f ? 2 : 1,
+                particles_.emit ( fuse_tip, ( pulse > 0.72f && !low_vfx ) ? 2 : 1,
                                   sf::Color ( 255, 202, 132, 198 ),
                                   52.f + pulse * 26.f, 0.16f, 2.8f );
                 particles_.emit ( fuse_tip, 1, sf::Color ( 255, 132, 82, 172 ),
@@ -1385,16 +1439,23 @@ void GameScene::render ( sf::RenderWindow& window )
     // Bubbler: draw bubble overlay around objects caught in capture zone
     if ( !bubble_capture_zones_.empty() )
     {
-        for ( const auto& zone : bubble_capture_zones_ )
+        const std::size_t zone_limit = vfx_load_factor_ < 0.60f
+                                           ? std::min<std::size_t> ( bubble_capture_zones_.size(), 1u )
+                                           : bubble_capture_zones_.size();
+        const std::size_t bubble_stride = vfx_load_factor_ < 0.68f ? 2u : 1u;
+
+        for ( std::size_t zi = 0; zi < zone_limit; ++zi )
         {
+            const auto& zone = bubble_capture_zones_[zi];
             const float life_t  = std::clamp ( 1.f - zone.age / zone.lifetime, 0.f, 1.f );
             const float pop_t   = zone.age / zone.lifetime;
             // Pulsing shimmer speed increases as bubbles near popping
             const float shimmer = 0.5f + 0.5f * std::sin ( zone.age * 6.f + pop_t * 4.f );
             const float cap_r   = zone.captureRadius;
 
-            for ( const auto& obj : snapshot_.objects )
+            for ( std::size_t oi = 0; oi < snapshot_.objects.size(); oi += bubble_stride )
             {
+                const auto& obj = snapshot_.objects[oi];
                 if ( !obj.isActive )
                     continue;
                 // Only non-static blocks/targets can be lifted
@@ -1450,7 +1511,9 @@ void GameScene::render ( sf::RenderWindow& window )
     particles_.render ( world_pass_ );
     world_pass_.display();
 
-    const bool bloom_this_frame = bloom_ready_ && particles_.size() < 900u;
+    const std::size_t bloom_particle_limit = static_cast<std::size_t> (
+        std::round ( 620.0f + vfx_load_factor_ * 420.0f ) );
+    const bool bloom_this_frame = bloom_ready_ && particles_.size() < bloom_particle_limit;
     if ( bloom_this_frame )
     {
         const sf::Vector2u bloom_size = bloom_extract_pass_.getSize();
@@ -1513,6 +1576,19 @@ void GameScene::render ( sf::RenderWindow& window )
 
     // HUD in screen coordinates
     renderer_.draw_hud ( window, snapshot_, hud_text_ );
+
+    if ( show_perf_overlay_ )
+    {
+        perf_text_.setString (
+            std::to_string ( static_cast<int> ( std::round ( smoothed_fps_ ) ) )
+            + " fps" );
+        const auto bounds = perf_text_.getLocalBounds();
+        perf_text_.setPosition ( {
+            static_cast<float> ( window_size.x ) - bounds.size.x - 8.0f,
+            6.0f
+        } );
+        window.draw ( perf_text_ );
+    }
 }
 
 }  // namespace angry

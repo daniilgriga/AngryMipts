@@ -8,10 +8,12 @@
 #include "scene.hpp"
 #include "shared/level_data.hpp"
 #include "shared/thread_safe_queue.hpp"
+#include "shared/event.hpp"
 #include "shared/world_snapshot.hpp"
 #include "ui/result_scene.hpp"
 #include "ui/slingshot.hpp"
 
+#include <deque>
 #include <random>
 #include <vector>
 
@@ -66,6 +68,7 @@ private:
     WorldSnapshot snapshot_;
     sf::Font font_;
     sf::Text hud_text_;
+    sf::Text perf_text_;
     sf::Clock frame_clock_;
     LevelResult last_result_;
     SceneId pending_scene_ = SceneId::None;
@@ -93,6 +96,11 @@ private:
     std::vector<InflaterExpandRing>   inflater_rings_;
     std::vector<BubbleFloat>          bubble_floats_;
     std::vector<BubbleCaptureZone>    bubble_capture_zones_;
+    std::deque<Event> pending_events_;
+    bool show_perf_overlay_ = true;
+    float smoothed_dt_sec_ = 1.0f / 60.0f;
+    float smoothed_fps_ = 60.0f;
+    float vfx_load_factor_ = 1.0f;
     bool render_targets_dirty_ = true;
 
     static WorldSnapshot make_mock_snapshot();
