@@ -13,6 +13,55 @@
 namespace
 {
 
+enum class FrameLimitMode
+{
+    Fps60,
+    Fps120,
+    Unlimited,
+};
+
+FrameLimitMode nextFrameLimitMode( FrameLimitMode mode )
+{
+    switch ( mode )
+    {
+    case FrameLimitMode::Fps60:
+        return FrameLimitMode::Fps120;
+    case FrameLimitMode::Fps120:
+        return FrameLimitMode::Unlimited;
+    case FrameLimitMode::Unlimited:
+    default:
+        return FrameLimitMode::Fps60;
+    }
+}
+
+unsigned int frameLimitValue( FrameLimitMode mode )
+{
+    switch ( mode )
+    {
+    case FrameLimitMode::Fps60:
+        return 60u;
+    case FrameLimitMode::Fps120:
+        return 120u;
+    case FrameLimitMode::Unlimited:
+    default:
+        return 0u;
+    }
+}
+
+const char* frameLimitLabel( FrameLimitMode mode )
+{
+    switch ( mode )
+    {
+    case FrameLimitMode::Fps60:
+        return "60 FPS";
+    case FrameLimitMode::Fps120:
+        return "120 FPS";
+    case FrameLimitMode::Unlimited:
+    default:
+        return "Unlimited";
+    }
+}
+
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
 {
     if ( std::filesystem::exists( relativePath ) )
@@ -49,6 +98,13 @@ int main()
     sf::RenderWindow window;
     bool isFullscreen = false;
     sf::Vector2u windowedSize {1280u, 720u};
+    FrameLimitMode frameLimitMode = FrameLimitMode::Fps60;
+
+    auto applyFrameLimit = [&] ()
+    {
+        window.setVerticalSyncEnabled ( false );
+        window.setFramerateLimit ( frameLimitValue ( frameLimitMode ) );
+    };
 
     auto recreateWindow = [&] ( bool fullscreen )
     {
@@ -62,7 +118,7 @@ int main()
                             sf::Style::Default, sf::State::Windowed );
         }
 
-        window.setFramerateLimit ( 60 );
+        applyFrameLimit();
         isFullscreen = fullscreen;
     };
 
@@ -112,6 +168,15 @@ int main()
                     recreateWindow ( !isFullscreen );
                     if ( auto* game = scenes.get_scene<angry::GameScene> ( angry::SceneId::Game ) )
                         game->notify_window_recreated();
+                    continue;
+                }
+
+                if ( key->code == sf::Keyboard::Key::F10 )
+                {
+                    frameLimitMode = nextFrameLimitMode ( frameLimitMode );
+                    applyFrameLimit();
+                    std::cout << "Frame limit mode: " << frameLimitLabel ( frameLimitMode )
+                              << std::endl;
                     continue;
                 }
 

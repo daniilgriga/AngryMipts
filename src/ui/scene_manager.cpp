@@ -84,6 +84,15 @@ void SceneManager::update()
             switch_to ( SceneId::Result );
         }
     }
+    else if ( current_id_ == SceneId::Result )
+    {
+        auto* game = get_scene<GameScene> ( SceneId::Game );
+        auto* result = get_scene<ResultScene> ( SceneId::Result );
+        if ( game && result && game->poll_result_update() )
+        {
+            result->set_result ( game->get_last_result() );
+        }
+    }
 }
 
 void SceneManager::render ( sf::RenderWindow& window )

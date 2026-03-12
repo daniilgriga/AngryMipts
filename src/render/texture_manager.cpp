@@ -1,6 +1,7 @@
 #include "render/texture_manager.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -11,6 +12,12 @@ namespace
 {
 
 constexpr unsigned kTexSize = 256;
+
+bool should_dump_generated_textures()
+{
+    const char* flag = std::getenv ( "ANGRY_DUMP_TEXTURES" );
+    return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
+}
 
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
 {
@@ -40,11 +47,14 @@ sf::Texture render_texture ( const std::string& name,
     canvas.display();
 
     const sf::Image image = canvas.getTexture().copyToImage();
-    const std::filesystem::path outputDir =
-        std::filesystem::path ( resolveProjectPath ( "assets/textures/generated" ) );
-    std::error_code ec;
-    std::filesystem::create_directories ( outputDir, ec );
-    ( void ) image.saveToFile ( outputDir / ( name + ".png" ) );
+    if ( should_dump_generated_textures() )
+    {
+        const std::filesystem::path outputDir =
+            std::filesystem::path ( resolveProjectPath ( "assets/textures/generated" ) );
+        std::error_code ec;
+        std::filesystem::create_directories ( outputDir, ec );
+        ( void ) image.saveToFile ( outputDir / ( name + ".png" ) );
+    }
 
     sf::Texture texture ( image );
     texture.setSmooth ( true );

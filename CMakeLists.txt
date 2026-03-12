@@ -4,6 +4,7 @@ project(AngryMipts LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+enable_testing()
 
 # Dependencies
 include(FetchContent)
@@ -59,6 +60,9 @@ else()
     )
 endif()
 
+find_package(GTest REQUIRED)
+include(GoogleTest)
+
 # Data library (C)
 add_library(angry_data
     src/data/level_loader.cpp
@@ -89,6 +93,7 @@ add_executable(${PROJECT_NAME}
     src/ui/scene_manager.cpp
     src/ui/menu_scene.cpp
     src/ui/game_scene.cpp
+    src/ui/view_utils.cpp
     src/ui/slingshot.cpp
     src/ui/result_scene.cpp
     src/ui/level_select_scene.cpp
@@ -119,3 +124,19 @@ target_link_libraries(angry_data_smoke PRIVATE angry_data)
 target_compile_definitions(angry_data_smoke PRIVATE
     ANGRY_MIPTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
+add_test(NAME angry_data_smoke COMMAND angry_data_smoke)
+
+# UI/Render smoke tests (B)
+add_executable(angry_ui_render_tests
+    tests/ui_render_tests.cpp
+    src/render/particles.cpp
+    src/ui/view_utils.cpp
+)
+target_include_directories(angry_ui_render_tests PRIVATE src)
+target_link_libraries(angry_ui_render_tests PRIVATE
+    SFML::Graphics
+    SFML::System
+    GTest::gtest
+    GTest::gtest_main
+)
+gtest_discover_tests(angry_ui_render_tests)

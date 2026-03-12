@@ -1,6 +1,7 @@
 #include "physics_engine.hpp"
 
 #include "physics_units.hpp"
+#include "shared/world_config.hpp"
 
 #include <box2d/box2d.h>
 
@@ -30,7 +31,7 @@ constexpr float kFloorImpactDamageMultiplier = 0.75f;
 constexpr float kFloorContactMinNormalY = 0.75f;
 constexpr float kFloorContactBandTopPx = 30.0f;
 constexpr float kFloorContactBandBottomPx = 60.0f;
-constexpr float kGroundTopYpx = 600.0f;
+constexpr float kGroundTopYpx = world::kGroundTopYpx;
 constexpr float kBubblerCaptureRadiusPx = 140.0f;
 constexpr float kBubblerBubbleDurationSec = 1.10f;
 constexpr float kBubblerLiftAccelMps2 = 18.0f;
@@ -113,6 +114,66 @@ inline float projectileDamageMultiplier(ProjectileType projectileType)
     }
 
     return 1.0f;
+}
+
+inline int blockDestroyedScore(Material material)
+{
+    switch (material)
+    {
+        case Material::Glass:
+            return 20;
+        case Material::Wood:
+            return 50;
+        case Material::Stone:
+            return 100;
+        case Material::Ice:
+            return 30;
+    }
+
+    return 20;
+}
+
+struct StarThresholds
+{
+    int one = 1;
+    int two = 2;
+    int three = 3;
+};
+
+inline int sumTargetScore(const LevelData& level)
+{
+    int scoreSum = 0;
+    for (const TargetData& target : level.targets)
+    {
+        scoreSum += std::max(0, target.scoreValue);
+    }
+    return scoreSum;
+}
+
+inline StarThresholds buildStarThresholds(const LevelData& level)
+{
+    StarThresholds thresholds;
+    thresholds.one = std::max(1, sumTargetScore(level));
+    thresholds.two = std::max(level.meta.star2Threshold, thresholds.one + 1);
+    thresholds.three = std::max(level.meta.star3Threshold, thresholds.two + 1);
+    return thresholds;
+}
+
+inline int calculateStarsForResult(
+    const LevelData& level,
+    const ScoreSystem& scoreSystem,
+    LevelStatus status)
+{
+    const StarThresholds thresholds = buildStarThresholds(level);
+    int stars = scoreSystem.starsFor(thresholds.one, thresholds.two, thresholds.three);
+
+    if (status == LevelStatus::Win)
+    {
+        // A completed level must grant at least one star.
+        stars = std::max(stars, 1);
+    }
+
+    return std::clamp(stars, 0, 3);
 }
 
 inline bool isBodyOnSurface(b2BodyId bodyId)
@@ -466,6 +527,7 @@ void PhysicsEngine::step(float dt)
         }
         if (!binding.isDestructible)
         {
+            ++i;
             continue;
         }
 
@@ -484,7 +546,10 @@ void PhysicsEngine::step(float dt)
         }
 
         const bool isTarget = binding.kind == ObjectSnapshot::Kind::Target;
-        const int scoreAwarded = isTarget ? binding.scoreValue : 0;
+        const bool isBlock = binding.kind == ObjectSnapshot::Kind::Block;
+        const int scoreAwarded = isTarget
+            ? binding.scoreValue
+            : (isBlock ? blockDestroyedScore(binding.material) : 0);
         const Vec2 eventPositionPx = binding.bodyId.index1 != 0
             ? worldToPx({b2Body_GetPosition(binding.bodyId).x, b2Body_GetPosition(binding.bodyId).y})
             : binding.lastPositionPx;
@@ -494,12 +559,16 @@ void PhysicsEngine::step(float dt)
             eventPositionPx,
             binding.material});
 
-        if (isTarget)
+        if (scoreAwarded > 0)
         {
             scoreSystem_.add(scoreAwarded);
             snapshot_.score = scoreSystem_.score();
-            events_.push_back(TargetHitEvent{binding.id, scoreAwarded});
             events_.push_back(ScoreChangedEvent{snapshot_.score});
+
+            if (isTarget)
+            {
+                events_.push_back(TargetHitEvent{binding.id, scoreAwarded});
+            }
         }
 
         if (binding.bodyId.index1 != 0)
@@ -689,14 +758,8 @@ void PhysicsEngine::step(float dt)
     if (statusBeforeStep != snapshot_.status
         && (snapshot_.status == LevelStatus::Win || snapshot_.status == LevelStatus::Lose))
     {
-        int stars = 0;
-        if (snapshot_.status == LevelStatus::Win)
-        {
-            stars = scoreSystem_.starsFor(
-                currentLevel_.meta.star1Threshold,
-                currentLevel_.meta.star2Threshold,
-                currentLevel_.meta.star3Threshold);
-        }
+        const int stars = calculateStarsForResult(
+            currentLevel_, scoreSystem_, snapshot_.status);
 
         snapshot_.stars = stars;
         events_.push_back(LevelCompletedEvent{
@@ -1173,7 +1236,10 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                         BodyBinding& victim = bodies_[i];
                         const bool isTarget = victim.kind == ObjectSnapshot::Kind::Target;
-                        const int scoreAwarded = isTarget ? victim.scoreValue : 0;
+                        const bool isBlock = victim.kind == ObjectSnapshot::Kind::Block;
+                        const int scoreAwarded = isTarget
+                            ? victim.scoreValue
+                            : (isBlock ? blockDestroyedScore(victim.material) : 0);
                         const Vec2 eventPositionPx = victim.bodyId.index1 != 0
                             ? worldToPx({b2Body_GetPosition(victim.bodyId).x, b2Body_GetPosition(victim.bodyId).y})
                             : victim.lastPositionPx;
@@ -1183,12 +1249,16 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             eventPositionPx,
                             victim.material});
 
-                        if (isTarget)
+                        if (scoreAwarded > 0)
                         {
                             scoreSystem_.add(scoreAwarded);
                             snapshot_.score = scoreSystem_.score();
-                            events_.push_back(TargetHitEvent{victim.id, scoreAwarded});
                             events_.push_back(ScoreChangedEvent{snapshot_.score});
+
+                            if (isTarget)
+                            {
+                                events_.push_back(TargetHitEvent{victim.id, scoreAwarded});
+                            }
                         }
 
                         if (victim.bodyId.index1 != 0)
@@ -1237,20 +1307,22 @@ void PhysicsEngine::createGround(float topYpx)
     shapeDef.friction = 0.9f;
     shapeDef.restitution = 0.05f;
 
-    const float halfWidthM = 1400.0f / PIXELS_PER_METER;
-    const float halfHeightM = 20.0f / PIXELS_PER_METER;
+    const float halfWidthM =
+        (world::kWidthPx + world::kBoundaryExtraWidthPx) / PIXELS_PER_METER;
+    const float halfHeightM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
     const float centerYpx = topYpx + (halfHeightM * PIXELS_PER_METER);
-    const b2Vec2 centerM = b2Vec2{640.0f / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
+    const b2Vec2 centerM =
+        b2Vec2{(world::kWidthPx * 0.5f) / PIXELS_PER_METER, centerYpx / PIXELS_PER_METER};
     const b2Polygon groundPolygon = b2MakeOffsetBox(halfWidthM, halfHeightM, centerM, 0.0f);
 
     b2CreatePolygonShape(groundBodyId, &shapeDef, &groundPolygon);
 
     // World bounds so projectile collides with screen borders instead of flying away.
-    const float wallHalfWidthM = 20.0f / PIXELS_PER_METER;
-    const float wallHalfHeightM = 900.0f / PIXELS_PER_METER;
-    const float leftWallCenterXPx = -10.0f;
-    const float rightWallCenterXPx = 1290.0f;
-    const float wallCenterYPx = 360.0f;
+    const float wallHalfWidthM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
+    const float wallHalfHeightM = world::kBoundaryHalfHeightPx / PIXELS_PER_METER;
+    const float leftWallCenterXPx = -world::kBoundaryThicknessPx * 0.5f;
+    const float rightWallCenterXPx = world::kWidthPx + world::kBoundaryThicknessPx * 0.5f;
+    const float wallCenterYPx = world::kHeightPx * 0.5f;
 
     const b2Polygon leftWall = b2MakeOffsetBox(
         wallHalfWidthM,
@@ -1264,12 +1336,14 @@ void PhysicsEngine::createGround(float topYpx)
         b2Vec2{rightWallCenterXPx / PIXELS_PER_METER, wallCenterYPx / PIXELS_PER_METER}, 0.0f);
     b2CreatePolygonShape(groundBodyId, &shapeDef, &rightWall);
 
-    const float ceilingHalfHeightM = 20.0f / PIXELS_PER_METER;
-    const float ceilingCenterYPx = -20.0f;
+    const float ceilingHalfHeightM = world::kBoundaryThicknessPx / PIXELS_PER_METER;
+    const float ceilingCenterYPx = -world::kBoundaryThicknessPx;
     const b2Polygon ceiling = b2MakeOffsetBox(
         halfWidthM,
         ceilingHalfHeightM,
-        b2Vec2{640.0f / PIXELS_PER_METER, ceilingCenterYPx / PIXELS_PER_METER}, 0.0f);
+        b2Vec2{(world::kWidthPx * 0.5f) / PIXELS_PER_METER,
+               ceilingCenterYPx / PIXELS_PER_METER},
+        0.0f);
     b2CreatePolygonShape(groundBodyId, &shapeDef, &ceiling);
 }
 
@@ -1525,10 +1599,8 @@ void PhysicsEngine::updateLevelStatus()
 
     if (snapshot_.shotsRemaining == 0 && !hasAliveProjectiles())
     {
-        const bool hasOneStarScore =
-            currentLevel_.meta.star1Threshold > 0
-            && scoreSystem_.score() >= currentLevel_.meta.star1Threshold;
-        snapshot_.status = hasOneStarScore ? LevelStatus::Win : LevelStatus::Lose;
+        // No shots/projectiles left while targets are still alive -> definite loss.
+        snapshot_.status = LevelStatus::Lose;
     }
     else
     {

@@ -1,4 +1,5 @@
 #include "render/renderer.hpp"
+#include "shared/world_config.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,9 +12,9 @@ namespace angry
 namespace
 {
 
-constexpr float kWorldW = 1920.f;
-constexpr float kWorldH = 1080.f;
-constexpr float kGroundY = 600.f;  // must match kGroundTopYpx in physics_engine.cpp
+constexpr float kWorldW = world::kWidthPx;
+constexpr float kWorldH = world::kHeightPx;
+constexpr float kGroundY = world::kGroundTopYpx;
 constexpr float kPi = 3.14159265358979323846f;
 
 sf::Vector2f rotate_local ( sf::Vector2f v, float angle_deg )
