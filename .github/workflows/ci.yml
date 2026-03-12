@@ -51,19 +51,24 @@ jobs:
           cmake --build /tmp/SFML/build --parallel
           cmake --install /tmp/SFML/build
 
+      - name: Export Linux build/runtime paths
+        if: runner.os == 'Linux'
+        run: |
+          echo "CMAKE_PREFIX_PATH=$HOME/sfml" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/sfml/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew install sfml nlohmann-json googletest
 
+      - name: Export macOS CMake prefix
+        if: runner.os == 'macOS'
+        run: |
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix sfml):$(brew --prefix nlohmann-json):$(brew --prefix googletest)" >> "$GITHUB_ENV"
+
       - name: Configure
         run: |
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            export CMAKE_PREFIX_PATH="$HOME/sfml"
-          else
-            export CMAKE_PREFIX_PATH="$(brew --prefix sfml):$(brew --prefix nlohmann-json):$(brew --prefix googletest)"
-          fi
-
           cmake -S . -B build-ci \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
