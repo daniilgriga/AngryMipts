@@ -128,6 +128,7 @@ void PhysicsThread::tickSingleThread(float dt)
 
 WorldSnapshot PhysicsThread::readSnapshot() const
 {
+    std::lock_guard<std::mutex> lock(snapshotMutex_);
     const int front = frontSnapshotIndex_.load(std::memory_order_acquire);
     return snapshots_[static_cast<size_t>(front)];
 }
@@ -190,6 +191,7 @@ void PhysicsThread::workerLoop()
 
 void PhysicsThread::publishSnapshotLocked()
 {
+    std::lock_guard<std::mutex> lock(snapshotMutex_);
     const int front = frontSnapshotIndex_.load(std::memory_order_relaxed);
     const int back = 1 - front;
     snapshots_[static_cast<size_t>(back)] = engine_.getSnapshot();

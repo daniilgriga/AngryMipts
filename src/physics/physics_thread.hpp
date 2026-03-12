@@ -57,6 +57,7 @@ private:
     ThreadSafeQueue<Command> commandQueue_;
     ThreadSafeQueue<Event> eventQueue_;
     std::array<WorldSnapshot, 2> snapshots_{};
+    mutable std::mutex snapshotMutex_;
     std::atomic<int> frontSnapshotIndex_{0};
     bool running_ = false;
 };
