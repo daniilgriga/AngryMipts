@@ -27,6 +27,7 @@ jobs:
             cmake \
             g++ \
             git \
+            libgtest-dev \
             libfreetype6-dev \
             libgl1-mesa-dev \
             libopenal-dev \
@@ -53,14 +54,14 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install sfml nlohmann-json
+          brew install sfml nlohmann-json googletest
 
       - name: Configure
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
             export CMAKE_PREFIX_PATH="$HOME/sfml"
           else
-            export CMAKE_PREFIX_PATH="$(brew --prefix sfml):$(brew --prefix nlohmann-json)"
+            export CMAKE_PREFIX_PATH="$(brew --prefix sfml):$(brew --prefix nlohmann-json):$(brew --prefix googletest)"
           fi
 
           cmake -S . -B build-ci \
@@ -69,3 +70,6 @@ jobs:
 
       - name: Build
         run: cmake --build build-ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure

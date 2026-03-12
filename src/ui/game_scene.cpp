@@ -2,6 +2,7 @@
 
 #include "data/logger.hpp"
 #include "shared/world_config.hpp"
+#include "ui/view_utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -87,32 +88,6 @@ void main()
     gl_FragColor = vec4(sum, 1.0);
 }
 )GLSL";
-
-void apply_letterbox ( sf::View& view, sf::Vector2u window_size )
-{
-    if ( window_size.x == 0 || window_size.y == 0 )
-        return;
-
-    const float window_aspect =
-        static_cast<float> ( window_size.x ) / static_cast<float> ( window_size.y );
-
-    if ( window_aspect > world::kAspect )
-    {
-        const float width = world::kAspect / window_aspect;
-        const float left = ( 1.f - width ) * 0.5f;
-        view.setViewport ( sf::FloatRect ( {left, 0.f}, {width, 1.f} ) );
-    }
-    else if ( window_aspect < world::kAspect )
-    {
-        const float height = window_aspect / world::kAspect;
-        const float top = ( 1.f - height ) * 0.5f;
-        view.setViewport ( sf::FloatRect ( {0.f, top}, {1.f, height} ) );
-    }
-    else
-    {
-        view.setViewport ( sf::FloatRect ( {0.f, 0.f}, {1.f, 1.f} ) );
-    }
-}
 
 float strong_impact_factor ( float impulse )
 {
@@ -1134,7 +1109,7 @@ SceneId GameScene::handle_input ( const sf::Event& event )
 
     if ( snapshot_.status == LevelStatus::Running && window_ptr_ )
     {
-        apply_letterbox ( game_view_, window_ptr_->getSize() );
+        apply_letterbox_view ( game_view_, window_ptr_->getSize() );
         auto cmd = slingshot_.handle_input ( event, snapshot_.slingshot, *window_ptr_,
                                              game_view_ );
         if ( cmd.has_value() )
@@ -1319,7 +1294,7 @@ void GameScene::render ( sf::RenderWindow& window )
         return;
 
     window_ptr_ = &window;
-    apply_letterbox ( game_view_, window_size );
+    apply_letterbox_view ( game_view_, window_size );
 
     if ( render_targets_dirty_ || world_pass_.getSize() != window_size )
     {
