@@ -29,20 +29,41 @@ jobs:
           cmake --version
           g++ --version
           git --version
+          ccache --version
+          pkg-config --modversion openssl || true
 
-      - name: Export self-hosted build/runtime paths
+      - name: Export build/runtime paths
         run: |
           echo "CMAKE_PREFIX_PATH=/opt/sfml-3" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=/opt/sfml-3/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Configure ccache
+        run: |
+          mkdir -p "$HOME/.ccache"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          ccache --set-config=max_size=2G
+          ccache --set-config=compression=true
+          ccache --set-config=compiler_check=content
+          ccache --zero-stats
 
       - name: Configure
         run: |
           cmake -S . -B build-selfhosted \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build-selfhosted --parallel 1
 
+      - name: Show ccache stats after build
+        run: ccache --show-stats
+
       - name: Test
         run: ctest --test-dir build-selfhosted --output-on-failure
+
+      - name: Show final ccache stats
+        if: always()
+        run: ccache --show-stats
