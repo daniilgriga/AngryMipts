@@ -17,6 +17,7 @@ private:
     sf::Font font_;
     sf::Text title_;
     sf::Text score_text_;
+    sf::Text status_note_;
     sf::Text prompt_;
 
     LevelResult result_;

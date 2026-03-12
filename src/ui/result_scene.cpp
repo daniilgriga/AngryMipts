@@ -88,10 +88,12 @@ ResultScene::ResultScene ( const sf::Font& font )
     : font_ ( font )
     , title_ ( font_, "", 48 )
     , score_text_ ( font_, "", 28 )
+    , status_note_ ( font_, "", 18 )
     , prompt_ ( font_, "[Enter] Retry   [Backspace] Menu", 20 )
 {
     title_.setFillColor ( sf::Color::White );
     score_text_.setFillColor ( sf::Color::White );
+    status_note_.setFillColor ( sf::Color ( 230, 245, 255 ) );
     prompt_.setFillColor ( sf::Color ( 230, 245, 255 ) );
 }
 
@@ -104,6 +106,9 @@ void ResultScene::set_result ( const LevelResult& result )
     title_.setFillColor ( result_.win ? sf::Color ( 50, 200, 50 ) : sf::Color ( 200, 50, 50 ) );
 
     score_text_.setString ( "Score: " + std::to_string ( result_.score ) );
+    status_note_.setString ( result_.win
+        ? "Result saved to leaderboard."
+        : "Level not completed: stars are not saved." );
 }
 
 SceneId ResultScene::handle_input ( const sf::Event& event )
@@ -240,14 +245,19 @@ void ResultScene::render ( sf::RenderWindow& window )
     }
 
     score_text_.setFillColor ( sf::Color ( 236, 246, 255 ) );
+    status_note_.setFillColor ( result_.win
+        ? sf::Color ( 170, 235, 196 )
+        : sf::Color ( 255, 200, 210 ) );
     prompt_.setFillColor ( sf::Color ( 230, 245, 255,
                                        static_cast<uint8_t> ( 182.f + 70.f * pulse ) ) );
 
     center_text ( score_text_, ws.y * 0.57f );
-    center_text ( prompt_, ws.y * 0.70f );
+    center_text ( status_note_, ws.y * 0.63f );
+    center_text ( prompt_, ws.y * 0.69f );
 
     window.draw ( title_ );
     window.draw ( score_text_ );
+    window.draw ( status_note_ );
     window.draw ( prompt_ );
 }
 
