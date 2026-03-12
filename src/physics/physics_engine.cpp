@@ -1599,11 +1599,8 @@ void PhysicsEngine::updateLevelStatus()
 
     if (snapshot_.shotsRemaining == 0 && !hasAliveProjectiles())
     {
-        // Alternate completion rule:
-        // if shots are over and at least 1-star score threshold is reached -> Win.
-        const StarThresholds thresholds = buildStarThresholds(currentLevel_);
-        const bool reachedOneStar = scoreSystem_.score() >= thresholds.one;
-        snapshot_.status = reachedOneStar ? LevelStatus::Win : LevelStatus::Lose;
+        // Invariant: level can be won only when all targets are destroyed.
+        snapshot_.status = LevelStatus::Lose;
     }
     else
     {

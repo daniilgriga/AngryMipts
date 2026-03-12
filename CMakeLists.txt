@@ -191,3 +191,15 @@ target_link_libraries(angry_account_service_tests PRIVATE
     GTest::gtest_main
 )
 gtest_discover_tests(angry_account_service_tests)
+
+# Physics engine behavior tests (A)
+add_executable(angry_physics_engine_tests
+    tests/physics_engine_tests.cpp
+)
+target_include_directories(angry_physics_engine_tests PRIVATE src)
+target_link_libraries(angry_physics_engine_tests PRIVATE
+    angry_physics
+    GTest::gtest
+    GTest::gtest_main
+)
+gtest_discover_tests(angry_physics_engine_tests)
