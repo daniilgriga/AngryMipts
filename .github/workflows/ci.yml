@@ -1,86 +1,72 @@
 name: CI
 
 on:
-  # push:
+  push:
   pull_request:
-    branches: [dev, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
+  build-selfhosted:
+    name: Build (self-hosted Linux)
+    runs-on: [self-hosted, linux, x64, vps-ci]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Show environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            g++ \
-            git \
-            libgtest-dev \
-            libfreetype6-dev \
-            libgl1-mesa-dev \
-            libopenal-dev \
-            libflac-dev \
-            libvorbis-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxi-dev \
-            libxrandr-dev \
-            libudev-dev \
-            nlohmann-json3-dev
+          whoami
+          hostname
+          pwd
+          ls -la
 
-      - name: Build and install SFML 3 on Linux
-        if: runner.os == 'Linux'
+      - name: Show tool versions
         run: |
-          git clone --depth 1 --branch 3.0.1 https://github.com/SFML/SFML.git /tmp/SFML
-          cmake -S /tmp/SFML -B /tmp/SFML/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX="$HOME/sfml"
-          cmake --build /tmp/SFML/build --parallel
-          cmake --install /tmp/SFML/build
+          cmake --version
+          g++ --version
+          git --version
+          ccache --version
+          pkg-config --modversion openssl || true
 
-      - name: Export Linux build/runtime paths
-        if: runner.os == 'Linux'
+      - name: Export build/runtime paths
         run: |
-          echo "CMAKE_PREFIX_PATH=$HOME/sfml" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$HOME/sfml/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=/opt/sfml-3" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/opt/sfml-3/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
 
-      - name: Install macOS dependencies
-        if: runner.os == 'macOS'
+      - name: Prepare ccache
         run: |
-          brew install sfml nlohmann-json googletest
+          mkdir -p "$HOME/.ccache"
+          ccache --set-config=max_size=2G
+          ccache --set-config=compression=true
+          ccache --set-config=compiler_check=content
+          ccache --show-config
+          ccache --show-stats || true
 
-      - name: Export macOS CMake prefix
-        if: runner.os == 'macOS'
-        run: |
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix sfml):$(brew --prefix nlohmann-json):$(brew --prefix googletest)" >> "$GITHUB_ENV"
+      - name: Clean previous build directory
+        run: rm -rf build-selfhosted
 
       - name: Configure
         run: |
-          cmake -S . -B build-ci \
+          cmake -S . -B build-selfhosted \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
-        run: cmake --build build-ci --parallel
+        run: cmake --build build-selfhosted --parallel 2
+
+      - name: Show ccache stats after build
+        run: ccache --show-stats
 
       - name: Test
-        run: ctest --test-dir build-ci --output-on-failure
+        run: ctest --test-dir build-selfhosted --output-on-failure
+
+      - name: Show final ccache stats
+        if: always()
+        run: ccache --show-stats
