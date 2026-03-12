@@ -118,6 +118,9 @@ bool OnlineScoreClient::submitScore(
     int score,
     int stars)
 {
+    Logger::info(
+        "OnlineScoreClient::submitScore(playerName, ...) is legacy. "
+        "Use submitScoreWithToken(token, ...) for JWT backend." );
     Logger::info( "Submitting score to backend..." );
 
     const json body = {
