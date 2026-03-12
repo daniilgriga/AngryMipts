@@ -712,7 +712,7 @@ void GameScene::finish_level()
 
     last_result_ = { won, score, stars };
 
-    if ( !scores_path_.empty() && level_id_ > 0 )
+    if ( won && !scores_path_.empty() && level_id_ > 0 )
     {
         try
         {

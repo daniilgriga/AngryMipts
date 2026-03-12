@@ -115,6 +115,66 @@ inline float projectileDamageMultiplier(ProjectileType projectileType)
     return 1.0f;
 }
 
+inline int blockDestroyedScore(Material material)
+{
+    switch (material)
+    {
+        case Material::Glass:
+            return 20;
+        case Material::Wood:
+            return 50;
+        case Material::Stone:
+            return 100;
+        case Material::Ice:
+            return 30;
+    }
+
+    return 20;
+}
+
+struct StarThresholds
+{
+    int one = 1;
+    int two = 2;
+    int three = 3;
+};
+
+inline int sumTargetScore(const LevelData& level)
+{
+    int scoreSum = 0;
+    for (const TargetData& target : level.targets)
+    {
+        scoreSum += std::max(0, target.scoreValue);
+    }
+    return scoreSum;
+}
+
+inline StarThresholds buildStarThresholds(const LevelData& level)
+{
+    StarThresholds thresholds;
+    thresholds.one = std::max(1, sumTargetScore(level));
+    thresholds.two = std::max(level.meta.star2Threshold, thresholds.one + 1);
+    thresholds.three = std::max(level.meta.star3Threshold, thresholds.two + 1);
+    return thresholds;
+}
+
+inline int calculateStarsForResult(
+    const LevelData& level,
+    const ScoreSystem& scoreSystem,
+    LevelStatus status)
+{
+    const StarThresholds thresholds = buildStarThresholds(level);
+    int stars = scoreSystem.starsFor(thresholds.one, thresholds.two, thresholds.three);
+
+    if (status == LevelStatus::Win)
+    {
+        // A completed level must grant at least one star.
+        stars = std::max(stars, 1);
+    }
+
+    return std::clamp(stars, 0, 3);
+}
+
 inline bool isBodyOnSurface(b2BodyId bodyId)
 {
     const int contactCapacity = b2Body_GetContactCapacity(bodyId);
@@ -485,7 +545,10 @@ void PhysicsEngine::step(float dt)
         }
 
         const bool isTarget = binding.kind == ObjectSnapshot::Kind::Target;
-        const int scoreAwarded = isTarget ? binding.scoreValue : 0;
+        const bool isBlock = binding.kind == ObjectSnapshot::Kind::Block;
+        const int scoreAwarded = isTarget
+            ? binding.scoreValue
+            : (isBlock ? blockDestroyedScore(binding.material) : 0);
         const Vec2 eventPositionPx = binding.bodyId.index1 != 0
             ? worldToPx({b2Body_GetPosition(binding.bodyId).x, b2Body_GetPosition(binding.bodyId).y})
             : binding.lastPositionPx;
@@ -495,12 +558,16 @@ void PhysicsEngine::step(float dt)
             eventPositionPx,
             binding.material});
 
-        if (isTarget)
+        if (scoreAwarded > 0)
         {
             scoreSystem_.add(scoreAwarded);
             snapshot_.score = scoreSystem_.score();
-            events_.push_back(TargetHitEvent{binding.id, scoreAwarded});
             events_.push_back(ScoreChangedEvent{snapshot_.score});
+
+            if (isTarget)
+            {
+                events_.push_back(TargetHitEvent{binding.id, scoreAwarded});
+            }
         }
 
         if (binding.bodyId.index1 != 0)
@@ -690,14 +757,8 @@ void PhysicsEngine::step(float dt)
     if (statusBeforeStep != snapshot_.status
         && (snapshot_.status == LevelStatus::Win || snapshot_.status == LevelStatus::Lose))
     {
-        int stars = 0;
-        if (snapshot_.status == LevelStatus::Win)
-        {
-            stars = scoreSystem_.starsFor(
-                currentLevel_.meta.star1Threshold,
-                currentLevel_.meta.star2Threshold,
-                currentLevel_.meta.star3Threshold);
-        }
+        const int stars = calculateStarsForResult(
+            currentLevel_, scoreSystem_, snapshot_.status);
 
         snapshot_.stars = stars;
         events_.push_back(LevelCompletedEvent{
@@ -1174,7 +1235,10 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                         BodyBinding& victim = bodies_[i];
                         const bool isTarget = victim.kind == ObjectSnapshot::Kind::Target;
-                        const int scoreAwarded = isTarget ? victim.scoreValue : 0;
+                        const bool isBlock = victim.kind == ObjectSnapshot::Kind::Block;
+                        const int scoreAwarded = isTarget
+                            ? victim.scoreValue
+                            : (isBlock ? blockDestroyedScore(victim.material) : 0);
                         const Vec2 eventPositionPx = victim.bodyId.index1 != 0
                             ? worldToPx({b2Body_GetPosition(victim.bodyId).x, b2Body_GetPosition(victim.bodyId).y})
                             : victim.lastPositionPx;
@@ -1184,12 +1248,16 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             eventPositionPx,
                             victim.material});
 
-                        if (isTarget)
+                        if (scoreAwarded > 0)
                         {
                             scoreSystem_.add(scoreAwarded);
                             snapshot_.score = scoreSystem_.score();
-                            events_.push_back(TargetHitEvent{victim.id, scoreAwarded});
                             events_.push_back(ScoreChangedEvent{snapshot_.score});
+
+                            if (isTarget)
+                            {
+                                events_.push_back(TargetHitEvent{victim.id, scoreAwarded});
+                            }
                         }
 
                         if (victim.bodyId.index1 != 0)
