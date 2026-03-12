@@ -4,9 +4,9 @@
     "name": "physics_debug_original_birds",
     "totalShots": 9,
     "starThresholds": [
-      1,
-      2,
-      3
+      5000,
+      6100,
+      7200
     ]
   },
   "slingshot": {
