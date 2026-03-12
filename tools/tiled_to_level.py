@@ -66,9 +66,18 @@ def load_template_data(template_path: Path) -> dict[str, object]:
             name = prop.get("name")
             if not name:
                 continue
+            prop_type = str(prop.get("type") or "").strip().lower()
             value = prop.get("value")
             if value is None and prop.text is not None:
                 value = prop.text
+            if prop_type == "bool" and value is not None:
+                value = str(value).strip().lower() in {"1", "true", "yes", "on"}
+            elif prop_type in {"int", "float"} and value is not None:
+                numeric_text = str(value).strip()
+                if prop_type == "int":
+                    value = int(float(numeric_text))
+                else:
+                    value = float(numeric_text)
             properties[name] = value
         template["properties"] = properties
 
@@ -104,6 +113,76 @@ def parse_float(value: object, default: float) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     return float(str(value).strip())
+
+
+def parse_optional_bool(value: object) -> bool | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    token = str(value).strip().lower()
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    if token in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Unknown boolean value: {value!r}")
+
+
+def infer_material_from_type_hint(*hints: object) -> object:
+    for hint in hints:
+        token = str(hint or "").strip().lower()
+        if "wood" in token:
+            return "wood"
+        if "stone" in token:
+            return "stone"
+        if "glass" in token:
+            return "glass"
+        if "ice" in token:
+            return "ice"
+    return None
+
+
+def normalize_block_shape(value: object, has_polygon: bool) -> str:
+    token = str(value or "").strip().lower()
+    mapping = {
+        "rect": "rect",
+        "rectangle": "rect",
+        "box": "rect",
+        "circle": "circle",
+        "ellipse": "circle",
+        "triangle": "triangle",
+        "tri": "triangle",
+    }
+    if token in mapping:
+        return mapping[token]
+    if has_polygon:
+        return "triangle"
+    return "rect"
+
+
+def polygon_bounds(obj: dict) -> tuple[float, float, float, float] | None:
+    polygon = obj.get("polygon")
+    if not isinstance(polygon, list) or len(polygon) < 3:
+        return None
+
+    points: list[tuple[float, float]] = []
+    for point in polygon:
+        if not isinstance(point, dict):
+            continue
+        px = point.get("x")
+        py = point.get("y")
+        if px is None or py is None:
+            continue
+        points.append((float(px), float(py)))
+
+    if len(points) < 3:
+        return None
+
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return min(xs), max(xs), min(ys), max(ys)
 
 
 def normalize_projectile_type(value: object) -> str:
@@ -152,10 +231,14 @@ def infer_level_id(map_path: Path) -> int:
 
 
 def to_center_position(obj: dict, width: float, height: float) -> list[int]:
+    return to_center_position_with_local_center(obj, width / 2.0, height / 2.0)
+
+
+def to_center_position_with_local_center(
+    obj: dict, local_center_x: float, local_center_y: float
+) -> list[int]:
     rotation_deg = float(obj.get("rotation", 0.0) or 0.0)
     rotation_rad = math.radians(rotation_deg)
-    local_center_x = width / 2.0
-    local_center_y = height / 2.0
 
     # Tiled rotates rectangle objects around their origin; for the object coordinates used in
     # this map, the rotated local center must follow the same sign convention as the stored
@@ -182,22 +265,55 @@ def merge_properties(template_data: dict[str, object], obj: dict) -> dict[str, o
 
 def build_block(obj: dict, template_data: dict[str, object]) -> dict[str, object]:
     properties = merge_properties(template_data, obj)
+    has_polygon = polygon_bounds(obj) is not None
+    shape = normalize_block_shape(properties.get("shape"), has_polygon)
     width = float(obj.get("width", template_data.get("width", 0.0)) or 0.0)
     height = float(obj.get("height", template_data.get("height", 0.0)) or 0.0)
-    shape = str(properties.get("shape", "rect")).strip().lower()
+
+    polygon_bbox = polygon_bounds(obj)
+    if polygon_bbox is not None:
+        min_x, max_x, min_y, max_y = polygon_bbox
+        if width <= 0.0:
+            width = max_x - min_x
+        if height <= 0.0:
+            height = max_y - min_y
+        position = to_center_position_with_local_center(
+            obj, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
+        )
+    else:
+        position = to_center_position(obj, width, height)
+
+    material_hint = infer_material_from_type_hint(
+        obj.get("type"),
+        template_data.get("type"),
+        Path(str(obj.get("template", ""))).stem,
+    )
+    material_source = properties.get("material", material_hint)
 
     block = {
         "shape": shape,
-        "material": normalize_material(properties.get("material")),
-        "position": to_center_position(obj, width, height),
+        "material": normalize_material(material_source),
+        "position": position,
         "angle": int(round(float(obj.get("rotation", 0.0) or 0.0))),
         "hp": parse_int(properties.get("hp"), 50),
     }
 
+    static_value = parse_optional_bool(
+        properties.get("static", properties.get("isStatic"))
+    )
+    if static_value is not None:
+        block["static"] = static_value
+
+    indestructible_value = parse_optional_bool(
+        properties.get("indestructible", properties.get("isIndestructible"))
+    )
+    if indestructible_value is not None:
+        block["indestructible"] = indestructible_value
+
     if shape == "circle":
-        block["radius"] = int(round(width / 2.0))
+        radius_source = width if width > 0.0 else height
+        block["radius"] = int(round(radius_source / 2.0))
     else:
-        block["shape"] = "rect"
         block["size"] = [int(round(width)), int(round(height))]
 
     return block

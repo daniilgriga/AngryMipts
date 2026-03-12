@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "id": 20,
+    "name": "triangle_test",
+    "totalShots": 2,
+    "starThresholds": [
+      1000,
+      1500,
+      2000
+    ]
+  },
+  "slingshot": {
+    "position": [
+      110,
+      590
+    ],
+    "maxPull": 180
+  },
+  "projectiles": [
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Standard"
+    }
+  ],
+  "blocks": [
+    {
+      "shape": "triangle",
+      "material": "Glass",
+      "position": [
+        425,
+        565
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        70,
+        70
+      ]
+    },
+    {
+      "shape": "triangle",
+      "material": "Wood",
+      "position": [
+        245,
+        565
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        70,
+        70
+      ]
+    },
+    {
+      "shape": "triangle",
+      "material": "Stone",
+      "position": [
+        335,
+        565
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        70,
+        70
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "position": [
+        301,
+        569
+      ],
+      "radius": 20,
+      "hp": 20,
+      "score": 1000
+    },
+    {
+      "position": [
+        391,
+        569
+      ],
+      "radius": 20,
+      "hp": 20,
+      "score": 1000
+    }
+  ]
+}
