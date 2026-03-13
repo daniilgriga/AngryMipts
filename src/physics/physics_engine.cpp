@@ -1135,8 +1135,11 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                 else if (activeProjectileType_ == ProjectileType::Inflater)
                 {
                     constexpr float kInflatedRadiusPx = 40.0f;
-                    constexpr float kInflatedDensity = 0.75f;
-                    constexpr float kInflateSpeedDamp = 0.85f;
+                    constexpr float kInflatedDensity = 1.5f;
+                    constexpr float kInflateSpeedDamp = 0.90f;
+                    constexpr float kInflatePullRadiusPx = 170.0f;
+                    constexpr float kInflatePullImpulse = 0.72f;
+                    constexpr float kInflateMinPullFactor = 0.20f;
 
                     const EntityId projectileId = projectile->id;
                     const b2BodyId oldBodyId = activeProjectileBodyId_;
@@ -1160,8 +1163,8 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                     b2ShapeDef shapeDef = b2DefaultShapeDef();
                     shapeDef.density = kInflatedDensity;
-                    shapeDef.friction = 0.35f;
-                    shapeDef.restitution = 0.05f;
+                    shapeDef.friction = 0.55f;
+                    shapeDef.restitution = 0.0f;
                     shapeDef.enableHitEvents = true;
 
                     b2Circle circle = {};
@@ -1175,6 +1178,51 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             worldVel.x * kInflateSpeedDamp,
                             worldVel.y * kInflateSpeedDamp});
                     b2Body_SetAngularVelocity(inflatedBodyId, angularVel * 0.7f);
+
+                    const float pullRadiusWorld = kInflatePullRadiusPx / PIXELS_PER_METER;
+                    for (BodyBinding& candidate : bodies_)
+                    {
+                        if (B2_IS_NULL(candidate.bodyId) || !b2Body_IsValid(candidate.bodyId))
+                        {
+                            continue;
+                        }
+                        if (bodyIdEquals(candidate.bodyId, oldBodyId)
+                            || bodyIdEquals(candidate.bodyId, inflatedBodyId))
+                        {
+                            continue;
+                        }
+                        if (candidate.kind != ObjectSnapshot::Kind::Block
+                            && candidate.kind != ObjectSnapshot::Kind::Target)
+                        {
+                            continue;
+                        }
+                        if (candidate.isStatic || b2Body_GetType(candidate.bodyId) != b2_dynamicBody)
+                        {
+                            continue;
+                        }
+
+                        const b2Vec2 candidatePos = b2Body_GetPosition(candidate.bodyId);
+                        const float dx = worldPos.x - candidatePos.x;
+                        const float dy = worldPos.y - candidatePos.y;
+                        const float distance = std::sqrt(dx * dx + dy * dy);
+                        if (distance > pullRadiusWorld || distance < 0.0001f)
+                        {
+                            continue;
+                        }
+
+                        const float falloff = clampValue(
+                            1.0f - (distance / pullRadiusWorld),
+                            kInflateMinPullFactor,
+                            1.0f);
+                        const float mass = std::max(0.01f, b2Body_GetMass(candidate.bodyId));
+                        const float invDistance = 1.0f / distance;
+                        b2Body_ApplyLinearImpulseToCenter(
+                            candidate.bodyId,
+                            b2Vec2{
+                                dx * invDistance * kInflatePullImpulse * falloff * mass,
+                                dy * invDistance * kInflatePullImpulse * falloff * mass},
+                            true);
+                    }
 
                     if (B2_IS_NON_NULL(oldBodyId) && b2Body_IsValid(oldBodyId))
                     {
