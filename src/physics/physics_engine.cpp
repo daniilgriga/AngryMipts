@@ -178,7 +178,8 @@ inline ProjectileImpactOutcome resolveProjectileImpactOutcome(
     float blockHp,
     Material blockMaterial,
     ProjectileType projectileType,
-    b2Vec2 projectileVelocity)
+    b2Vec2 projectileVelocity,
+    b2Vec2 projectileToBlockNormal)
 {
     ProjectileImpactOutcome outcome;
     outcome.blockDamage = baseDamage
@@ -186,11 +187,69 @@ inline ProjectileImpactOutcome resolveProjectileImpactOutcome(
         * materialDamageMultiplier(blockMaterial);
     outcome.willBreak = outcome.blockDamage >= std::max(0.0f, blockHp);
 
-    // Stage 1 only: pipeline wiring. Stage 2 will compute true carry-through velocity.
     if (outcome.willBreak)
     {
-        outcome.hasVelocityCorrection = true;
-        outcome.correctedProjectileVelocity = projectileVelocity;
+        const float speed = std::sqrt(
+            projectileVelocity.x * projectileVelocity.x
+            + projectileVelocity.y * projectileVelocity.y);
+        if (speed > 0.0001f)
+        {
+            // Build safe contact normal and decompose velocity.
+            float nx = projectileToBlockNormal.x;
+            float ny = projectileToBlockNormal.y;
+            const float nLen = std::sqrt(nx * nx + ny * ny);
+            if (nLen > 0.0001f)
+            {
+                nx /= nLen;
+                ny /= nLen;
+            }
+            else
+            {
+                nx = projectileVelocity.x / speed;
+                ny = projectileVelocity.y / speed;
+            }
+
+            const float vn = projectileVelocity.x * nx + projectileVelocity.y * ny;
+            const b2Vec2 vNormal = b2Vec2{nx * vn, ny * vn};
+            const b2Vec2 vTangential = b2Vec2{
+                projectileVelocity.x - vNormal.x,
+                projectileVelocity.y - vNormal.y};
+
+            b2Vec2 correctedVelocity = b2Vec2{
+                vTangential.x * kBreakCarryRetainTangential + vNormal.x * kBreakCarryRetainNormal,
+                vTangential.y * kBreakCarryRetainTangential + vNormal.y * kBreakCarryRetainNormal};
+
+            float correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            const b2Vec2 velocityDir = b2Vec2{
+                projectileVelocity.x / speed,
+                projectileVelocity.y / speed};
+
+            if (correctedSpeed < kBreakCarryMinSpeedMps)
+            {
+                const float add = kBreakCarryMinSpeedMps - correctedSpeed;
+                correctedVelocity.x += velocityDir.x * add;
+                correctedVelocity.y += velocityDir.y * add;
+                correctedSpeed = kBreakCarryMinSpeedMps;
+            }
+
+            correctedVelocity.x += velocityDir.x * kBreakCarryImpulseBoostMps;
+            correctedVelocity.y += velocityDir.y * kBreakCarryImpulseBoostMps;
+
+            correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            if (correctedSpeed > kBreakCarryMaxSpeedMps)
+            {
+                const float scale = kBreakCarryMaxSpeedMps / correctedSpeed;
+                correctedVelocity.x *= scale;
+                correctedVelocity.y *= scale;
+            }
+
+            outcome.hasVelocityCorrection = true;
+            outcome.correctedProjectileVelocity = correctedVelocity;
+        }
     }
 
     return outcome;
@@ -721,7 +780,8 @@ void PhysicsEngine::step(float dt)
                 bindingB->hp,
                 bindingB->material,
                 bindingA->projectileType,
-                projectileVelocity);
+                projectileVelocity,
+                hit.normal);
             pendingDamageById[bindingB->id] += outcome.blockDamage;
             if (outcome.willBreak && outcome.hasVelocityCorrection)
             {
@@ -742,7 +802,8 @@ void PhysicsEngine::step(float dt)
                 bindingA->hp,
                 bindingA->material,
                 bindingB->projectileType,
-                projectileVelocity);
+                projectileVelocity,
+                b2Vec2{-hit.normal.x, -hit.normal.y});
             pendingDamageById[bindingA->id] += outcome.blockDamage;
             if (outcome.willBreak && outcome.hasVelocityCorrection)
             {
