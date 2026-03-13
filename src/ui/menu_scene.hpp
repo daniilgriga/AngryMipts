@@ -12,6 +12,8 @@ private:
     sf::Font        font_;
     sf::Text        title_;
     sf::Text        prompt_;
+    sf::Text        badge_text_;
+    sf::Text        badge_btn_;
 
 public:
     MenuScene ( const sf::Font& font, AccountService& accounts );

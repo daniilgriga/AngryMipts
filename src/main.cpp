@@ -130,7 +130,7 @@ int main()
     angry::AccountService accounts ( sessionPath );
     accounts.loadSession();
 
-    auto level_select = std::make_unique<angry::LevelSelectScene> ( font );
+    auto level_select = std::make_unique<angry::LevelSelectScene> ( font, &accounts );
     level_select->load_data ( resolveProjectPath ( "levels" ),
                               resolveProjectPath ( "scores.json" ) );
 
