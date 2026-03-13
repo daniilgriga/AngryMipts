@@ -12,6 +12,12 @@ DEFAULT_STAR_THRESHOLDS = [1000, 2500, 4000]
 DEFAULT_TOTAL_SHOTS = 4
 DEFAULT_MAX_PULL = 120
 TRIANGLE_MIN_TWICE_AREA = 1e-3
+MATERIAL_BLOCK_BONUS = {
+    "Wood": 50,
+    "Stone": 100,
+    "Glass": 20,
+    "Ice": 30,
+}
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -241,6 +247,55 @@ def parse_projectile_types(value: object) -> list[str]:
         projectile_types.append(normalize_projectile_type(token))
 
     return projectile_types
+
+
+def round_half_up(value: float) -> int:
+    return int(math.floor(value + 0.5))
+
+
+def is_potentially_destructible_block(block: dict[str, object]) -> bool:
+    return not bool(block.get("static", False)) and not bool(
+        block.get("indestructible", False)
+    )
+
+
+def compute_star_thresholds(
+    targets: list[dict[str, object]], blocks: list[dict[str, object]]
+) -> tuple[list[int], int, int, int]:
+    target_score = sum(int(target.get("score", 0)) for target in targets)
+
+    block_bonus_max = 0
+    for block in blocks:
+        if not is_potentially_destructible_block(block):
+            continue
+        material = str(block.get("material", "")).strip()
+        bonus = MATERIAL_BLOCK_BONUS.get(material)
+        if bonus is None:
+            raise ValueError(f"Unknown block material for bonus scoring: {material!r}")
+        block_bonus_max += bonus
+
+    max_score = target_score + block_bonus_max
+
+    star1 = target_score
+    star2 = target_score + round_half_up(0.35 * block_bonus_max)
+    star3 = target_score + round_half_up(0.70 * block_bonus_max)
+
+    # Enforce strict monotonic thresholds while staying within max_score.
+    if star2 <= star1:
+        star2 = star1 + 1
+    if star3 <= star2:
+        star3 = star2 + 1
+    if star3 > max_score:
+        star3 = max_score
+        star2 = min(star2, star3 - 1)
+
+    if not (star1 < star2 < star3 <= max_score):
+        raise ValueError(
+            "Failed to derive strict star thresholds. Need enough potential block bonus so "
+            "star1 < star2 < star3 <= maxScore is satisfiable."
+        )
+
+    return [star1, star2, star3], target_score, block_bonus_max, max_score
 
 
 def infer_level_id(map_path: Path) -> int:
@@ -476,18 +531,13 @@ def convert_map(map_path: Path) -> tuple[dict[str, object], list[str]]:
         level_name = f"Level {level_id}"
         warnings.append(f"Map property 'level_name' missing/empty, using '{level_name}'.")
 
-    star_thresholds = [
-        parse_int(map_properties.get("star_1"), 0),
-        parse_int(map_properties.get("star_2"), 0),
-        parse_int(map_properties.get("star_3"), 0),
-    ]
-    if any(value <= 0 for value in star_thresholds) or not (
-        star_thresholds[0] < star_thresholds[1] < star_thresholds[2]
+    if any(
+        key in map_properties
+        for key in ("star_1", "star_2", "star_3", "starThresholds")
     ):
-        star_thresholds = DEFAULT_STAR_THRESHOLDS[:]
         warnings.append(
-            "Map star thresholds missing/invalid, using default thresholds "
-            f"{star_thresholds}."
+            "Map star threshold properties are ignored. Thresholds are auto-generated "
+            "from targets and destructible blocks."
         )
 
     projectile_types = parse_projectile_types(map_properties.get("projectile_types"))
@@ -534,6 +584,15 @@ def convert_map(map_path: Path) -> tuple[dict[str, object], list[str]]:
 
     if not targets:
         warnings.append("Layer 'targets' has no objects; generated level will auto-win.")
+
+    star_thresholds, target_score, block_bonus_max, max_score = compute_star_thresholds(
+        targets, blocks
+    )
+    warnings.append(
+        "Auto star thresholds: "
+        f"targetScore={target_score}, blockBonusMax={block_bonus_max}, "
+        f"maxScore={max_score}, stars={star_thresholds}."
+    )
 
     slingshot_objects = collect_layer_objects(tiled_map.get("layers", []), "slingshot")
     if not slingshot_objects:

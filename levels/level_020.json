@@ -4,9 +4,9 @@
     "name": "triangle_test",
     "totalShots": 2,
     "starThresholds": [
-      1000,
-      1500,
-      2000
+      2000,
+      2059,
+      2119
     ]
   },
   "slingshot": {
