@@ -25,12 +25,13 @@ private:
     sf::Text title_;
     sf::Text score_text_;
     sf::Text status_note_;
-    sf::Text leaderboard_title_;
-    sf::Text leaderboard_empty_;
     sf::Text prompt_;
+    sf::Text lb_title_;
+    sf::Text lb_empty_;
 
     LevelResult result_;
-    sf::Clock   star_clock_;  // reset on set_result, drives bounce-in animation
+    sf::Clock   star_clock_;
+    float       lb_scroll_ = 0.f;   // pixels scrolled in leaderboard panel
 
 public:
     explicit ResultScene ( const sf::Font& font );
