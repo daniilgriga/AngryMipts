@@ -7,6 +7,10 @@
 // ============================================================
 
 #include <raylib.h>
+#include <rlgl.h>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -15,22 +19,80 @@
 
 namespace platform
 {
+struct Texture;
+}  // namespace platform
+
+namespace sf
+{
+
+enum class PrimitiveType
+{
+    Points = 0,
+    Lines = 1,
+    LineStrip = 2,
+    Triangles = 3,
+    TriangleStrip = 4,
+    TriangleFan = 5,
+};
+
+struct Text
+{
+    enum Style
+    {
+        Regular = 0,
+        Bold = 1,
+    };
+};
+
+struct Vector2i
+{
+    int x = 0;
+    int y = 0;
+};
+
+struct IntRect
+{
+    Vector2i position;
+    Vector2i size;
+    IntRect() = default;
+    IntRect( Vector2i pos, Vector2i sz ) : position( pos ), size( sz ) {}
+};
+
+using Texture = platform::Texture;
+
+inline float degrees( float v ) { return v; }
+
+}  // namespace sf
+
+namespace platform
+{
 
 // ── Geometry ────────────────────────────────────────────────
+
+struct Vec2u;
 
 struct Vec2f
 {
     float x = 0, y = 0;
     Vec2f() = default;
     Vec2f( float x, float y ) : x(x), y(y) {}
+    explicit Vec2f( Vec2u v );
     Vec2f  operator+( Vec2f o ) const { return { x + o.x, y + o.y }; }
     Vec2f  operator-( Vec2f o ) const { return { x - o.x, y - o.y }; }
     Vec2f  operator*( float s ) const { return { x * s,   y * s   }; }
+    Vec2f  operator/( float s ) const { return { x / s,   y / s   }; }
     Vec2f& operator+=( Vec2f o ) { x += o.x; y += o.y; return *this; }
     Vec2f& operator-=( Vec2f o ) { x -= o.x; y -= o.y; return *this; }
+    Vec2f& operator*=( float s ) { x *= s; y *= s; return *this; }
 };
 struct Vec2u { unsigned x = 0, y = 0; };
 struct Vec2i { int x = 0, y = 0; };
+
+inline Vec2f::Vec2f( Vec2u v )
+    : x( static_cast<float> ( v.x ) ),
+      y( static_cast<float> ( v.y ) )
+{
+}
 
 struct Rect
 {
@@ -102,7 +164,7 @@ struct Font
     bool openFromFile( const std::string& path )
     {
         rl = ::LoadFont( path.c_str() );
-        loaded = IsFontReady( rl );
+        loaded = IsFontValid( rl );
         return loaded;
     }
 };
@@ -185,7 +247,7 @@ struct Texture
     void loadFromImage( const Image& img )
     {
         rl     = LoadTextureFromImage( img.rl );
-        loaded = IsTextureReady( rl );
+        loaded = IsTextureValid( rl );
     }
     void setSmooth( bool /*s*/ ) {}  // use SetTextureFilter if needed
     Vec2u getSize() const { return { unsigned(rl.width), unsigned(rl.height) }; }
@@ -206,7 +268,7 @@ struct Shader
         const char* vs = ( type == Type::Fragment ) ? nullptr : src.c_str();
         const char* fs = ( type == Type::Fragment ) ? src.c_str() : nullptr;
         rl     = LoadShaderFromMemory( vs, fs );
-        loaded = IsShaderReady( rl );
+        loaded = IsShaderValid( rl );
         return loaded;
     }
 
@@ -249,7 +311,15 @@ struct View
 
 // ── Event ────────────────────────────────────────────────────
 
-struct KeyEvent   { int key; bool alt = false; bool shift = false; bool ctrl = false; };
+struct KeyEvent
+{
+    int key = 0;
+    int code = 0;
+    bool pressed = true;
+    bool alt = false;
+    bool shift = false;
+    bool ctrl = false;
+};
 struct MouseBtnEvent  { float x, y; int button; };  // button: 0=left,1=right,2=mid
 struct MouseMoveEvent { float x, y; };
 struct MouseWheelEvent{ float delta; float x, y; };
@@ -272,11 +342,21 @@ using Event = std::variant<
 // ── Window ──────────────────────────────────────────────────
 // Wraps Raylib window + provides sf::RenderWindow-compatible API.
 
+struct RectShape;
+struct CircleShape;
+struct ConvexShape;
+struct Sprite;
+struct Vertex;
+struct VertexArray;
 struct RenderTexture; // forward
 struct Window
 {
     bool open_ = false;
     int  w_ = 1280, h_ = 720;
+    float last_mouse_x_ = 0.f;
+    float last_mouse_y_ = 0.f;
+    bool mouse_initialized_ = false;
+    bool was_focused_ = true;
 
     void create( unsigned w, unsigned h, const std::string& title )
     {
@@ -292,6 +372,14 @@ struct Window
     void setVerticalSyncEnabled( bool /*v*/ ) {}
 
     Vec2u getSize() const { return { unsigned(GetScreenWidth()), unsigned(GetScreenHeight()) }; }
+
+    void draw( const RectShape& shape );
+    void draw( const CircleShape& shape );
+    void draw( const ConvexShape& shape );
+    void draw( const Sprite& sprite );
+    void draw( const Text& text );
+    void draw( const Vertex* vertices, std::size_t count, sf::PrimitiveType type );
+    void draw( const VertexArray& vertices );
 
     // Events are polled separately via poll_events()
     std::vector<Event> pollEvents();
@@ -322,6 +410,12 @@ struct VertexArray
 {
     int                prim_type = 0;  // matches Raylib DrawPrimitive types
     std::vector<Vertex> verts;
+    VertexArray() = default;
+    explicit VertexArray( sf::PrimitiveType type, std::size_t count = 0 )
+        : prim_type ( static_cast<int> ( type ) ),
+          verts ( count )
+    {
+    }
     void resize( std::size_t n ) { verts.resize(n); }
     Vertex& operator[]( std::size_t i ) { return verts[i]; }
     const Vertex& operator[]( std::size_t i ) const { return verts[i]; }
@@ -334,6 +428,8 @@ struct RectShape
     Color fill_, outline_;
     float outline_t_ = 0.f;
     float rotation_  = 0.f;
+    RectShape() = default;
+    explicit RectShape( Vec2f size ) : size_( size ) {}
 
     void setPosition( Vec2f p )            { pos_       = p; }
     void setSize( Vec2f s )                { size_      = s; }
@@ -355,6 +451,9 @@ struct CircleShape
     float  outline_t_ = 0.f;
     float  radius_    = 0.f;
     int    point_count_ = 32;
+    float  rotation_ = 0.f;
+    CircleShape() = default;
+    explicit CircleShape( float radius ) : radius_( radius ) {}
 
     void setPosition( Vec2f p )         { pos_         = p; }
     void setRadius( float r )           { radius_      = r; }
@@ -363,6 +462,7 @@ struct CircleShape
     void setOutlineThickness( float t ) { outline_t_   = t; }
     void setOrigin( Vec2f o )           { origin_      = o; }
     void setPointCount( int n )         { point_count_ = n; }
+    void setRotation( float deg )       { rotation_    = deg; }
     float getRadius() const             { return radius_; }
 };
 
@@ -372,7 +472,10 @@ struct ConvexShape
     Vec2f   pos_, origin_;
     Color   fill_, outline_;
     float   outline_t_ = 0.f;
+    float   rotation_ = 0.f;
     const Texture* tex_ = nullptr;
+    ConvexShape() = default;
+    explicit ConvexShape( int n ) { setPointCount( n ); }
 
     void setPointCount( int n )             { points_.resize(n); }
     void setPoint( int i, Vec2f p )         { points_[i] = p; }
@@ -381,6 +484,8 @@ struct ConvexShape
     void setFillColor( Color c )            { fill_      = c; }
     void setOutlineColor( Color c )         { outline_   = c; }
     void setOutlineThickness( float t )     { outline_t_ = t; }
+    void setRotation( float deg )           { rotation_  = deg; }
+    void setTextureRect( const sf::IntRect& /*rect*/ ) {}
     void setTexture( const Texture* t )     { tex_       = t; }
 };
 
@@ -390,6 +495,8 @@ struct Sprite
     Vec2f          pos_, origin_, scale_ { 1.f, 1.f };
     float          rotation_ = 0.f;
     Color          color_    { 255,255,255,255 };
+    Sprite() = default;
+    explicit Sprite( const Texture& tex ) { setTexture( tex ); }
 
     void setTexture( const Texture& t )     { tex_      = &t; }
     void setPosition( Vec2f p )             { pos_      = p; }
@@ -410,7 +517,7 @@ struct RenderTexture
     bool create( unsigned w, unsigned h )
     {
         rl    = LoadRenderTexture( int(w), int(h) );
-        ready = IsRenderTextureReady( rl );
+        ready = IsRenderTextureValid( rl );
         color_tex.rl     = rl.texture;
         color_tex.loaded = ready;
         return ready;
@@ -458,7 +565,7 @@ struct Sound
     void load( const SoundBuffer& buf )
     {
         rl     = LoadSoundFromWave( buf.wave );
-        loaded = IsSoundReady( rl );
+        loaded = IsSoundValid( rl );
     }
 
     enum class Status { Stopped, Playing, Paused };
@@ -472,5 +579,281 @@ struct Sound
     void play()                { PlaySound( rl ); }
     void stop()                { StopSound( rl ); }
 };
+
+inline void draw_colored_triangle( const Vertex& a, const Vertex& b, const Vertex& c )
+{
+    rlBegin( RL_TRIANGLES );
+    rlColor4ub( a.color.r, a.color.g, a.color.b, a.color.a );
+    rlVertex2f( a.position.x, a.position.y );
+    rlColor4ub( b.color.r, b.color.g, b.color.b, b.color.a );
+    rlVertex2f( b.position.x, b.position.y );
+    rlColor4ub( c.color.r, c.color.g, c.color.b, c.color.a );
+    rlVertex2f( c.position.x, c.position.y );
+    rlEnd();
+}
+
+inline void Window::draw( const RectShape& shape )
+{
+    Rectangle rect {
+        shape.pos_.x - shape.origin_.x,
+        shape.pos_.y - shape.origin_.y,
+        shape.size_.x,
+        shape.size_.y
+    };
+    DrawRectanglePro( rect, { shape.origin_.x, shape.origin_.y },
+                      shape.rotation_, shape.fill_.to_rl() );
+    if ( shape.outline_t_ > 0.f )
+    {
+        DrawRectangleLinesEx( rect, shape.outline_t_, shape.outline_.to_rl() );
+    }
+}
+
+inline void Window::draw( const CircleShape& shape )
+{
+    const Vector2 center {
+        shape.pos_.x - shape.origin_.x + shape.radius_,
+        shape.pos_.y - shape.origin_.y + shape.radius_
+    };
+    DrawCircleV( center, shape.radius_, shape.fill_.to_rl() );
+    if ( shape.outline_t_ > 0.f )
+    {
+        DrawRing( center, shape.radius_ - shape.outline_t_, shape.radius_,
+                  0.f, 360.f, std::max( 24, shape.point_count_ ), shape.outline_.to_rl() );
+    }
+}
+
+inline void Window::draw( const ConvexShape& shape )
+{
+    if ( shape.points_.size() < 3 )
+    {
+        return;
+    }
+
+    const float rad = shape.rotation_ * 3.14159265358979323846f / 180.f;
+    const float cs = std::cos( rad );
+    const float sn = std::sin( rad );
+    const auto to_world = [&]( Vec2f p )
+    {
+        const Vec2f shifted { p.x - shape.origin_.x, p.y - shape.origin_.y };
+        const Vec2f rotated { shifted.x * cs - shifted.y * sn,
+                              shifted.x * sn + shifted.y * cs };
+        return Vector2 { shape.pos_.x + rotated.x, shape.pos_.y + rotated.y };
+    };
+
+    for ( std::size_t i = 1; i + 1 < shape.points_.size(); ++i )
+    {
+        const Vector2 a = to_world( shape.points_[0] );
+        const Vector2 b = to_world( shape.points_[i] );
+        const Vector2 c = to_world( shape.points_[i + 1] );
+        DrawTriangle( a, b, c, shape.fill_.to_rl() );
+    }
+}
+
+inline void Window::draw( const Sprite& sprite )
+{
+    if ( sprite.tex_ == nullptr || !sprite.tex_->loaded )
+    {
+        return;
+    }
+
+    const float src_w = static_cast<float> ( sprite.tex_->rl.width );
+    const float src_h = static_cast<float> ( sprite.tex_->rl.height );
+    Rectangle src { 0.f, 0.f, src_w, src_h };
+    Rectangle dst {
+        sprite.pos_.x,
+        sprite.pos_.y,
+        src_w * sprite.scale_.x,
+        src_h * sprite.scale_.y
+    };
+    DrawTexturePro( sprite.tex_->rl, src, dst,
+                    { sprite.origin_.x * sprite.scale_.x, sprite.origin_.y * sprite.scale_.y },
+                    sprite.rotation_, sprite.color_.to_rl() );
+}
+
+inline void Window::draw( const Text& text )
+{
+    if ( text.font_ == nullptr || !text.font_->loaded )
+    {
+        return;
+    }
+
+    const Vector2 size = MeasureTextEx( text.font_->rl, text.string_.c_str(),
+                                        static_cast<float> ( text.char_size_ ), 1.f );
+    const Vector2 pos {
+        text.position_.x - text.origin_.x,
+        text.position_.y - text.origin_.y
+    };
+
+    if ( text.outline_thickness_ > 0.f && text.outline_color_.a > 0 )
+    {
+        const float d = std::max( 1.f, text.outline_thickness_ );
+        DrawTextEx( text.font_->rl, text.string_.c_str(), { pos.x - d, pos.y }, size.y, 1.f,
+                    text.outline_color_.to_rl() );
+        DrawTextEx( text.font_->rl, text.string_.c_str(), { pos.x + d, pos.y }, size.y, 1.f,
+                    text.outline_color_.to_rl() );
+        DrawTextEx( text.font_->rl, text.string_.c_str(), { pos.x, pos.y - d }, size.y, 1.f,
+                    text.outline_color_.to_rl() );
+        DrawTextEx( text.font_->rl, text.string_.c_str(), { pos.x, pos.y + d }, size.y, 1.f,
+                    text.outline_color_.to_rl() );
+    }
+
+    DrawTextEx( text.font_->rl, text.string_.c_str(), pos, size.y, 1.f, text.fill_color_.to_rl() );
+}
+
+inline void Window::draw( const Vertex* vertices, std::size_t count, sf::PrimitiveType type )
+{
+    if ( vertices == nullptr || count == 0 )
+    {
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::Points )
+    {
+        for ( std::size_t i = 0; i < count; ++i )
+        {
+            DrawPixelV( { vertices[i].position.x, vertices[i].position.y },
+                        vertices[i].color.to_rl() );
+        }
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::Lines )
+    {
+        for ( std::size_t i = 0; i + 1 < count; i += 2 )
+        {
+            DrawLineEx( { vertices[i].position.x, vertices[i].position.y },
+                        { vertices[i + 1].position.x, vertices[i + 1].position.y },
+                        1.f, vertices[i].color.to_rl() );
+        }
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::LineStrip )
+    {
+        for ( std::size_t i = 0; i + 1 < count; ++i )
+        {
+            DrawLineEx( { vertices[i].position.x, vertices[i].position.y },
+                        { vertices[i + 1].position.x, vertices[i + 1].position.y },
+                        1.f, vertices[i].color.to_rl() );
+        }
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::Triangles )
+    {
+        for ( std::size_t i = 0; i + 2 < count; i += 3 )
+        {
+            draw_colored_triangle( vertices[i], vertices[i + 1], vertices[i + 2] );
+        }
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::TriangleStrip )
+    {
+        for ( std::size_t i = 0; i + 2 < count; ++i )
+        {
+            if ( ( i & 1u ) == 0u )
+            {
+                draw_colored_triangle( vertices[i], vertices[i + 1], vertices[i + 2] );
+            }
+            else
+            {
+                draw_colored_triangle( vertices[i + 1], vertices[i], vertices[i + 2] );
+            }
+        }
+        return;
+    }
+
+    if ( type == sf::PrimitiveType::TriangleFan )
+    {
+        for ( std::size_t i = 1; i + 1 < count; ++i )
+        {
+            draw_colored_triangle( vertices[0], vertices[i], vertices[i + 1] );
+        }
+    }
+}
+
+inline void Window::draw( const VertexArray& vertices )
+{
+    draw( vertices.verts.data(), vertices.verts.size(),
+          static_cast<sf::PrimitiveType> ( vertices.prim_type ) );
+}
+
+inline std::vector<Event> poll_events( Window& w )
+{
+    std::vector<Event> events;
+
+    if ( WindowShouldClose() )
+    {
+        events.push_back( ClosedEvent {} );
+    }
+
+    const int width = GetScreenWidth();
+    const int height = GetScreenHeight();
+    if ( width != w.w_ || height != w.h_ )
+    {
+        w.w_ = width;
+        w.h_ = height;
+        events.push_back( ResizedEvent { static_cast<unsigned> ( width ),
+                                         static_cast<unsigned> ( height ) } );
+    }
+
+    const bool focused = IsWindowFocused();
+    if ( focused && !w.was_focused_ )
+    {
+        events.push_back( FocusEvent {} );
+    }
+    w.was_focused_ = focused;
+
+    while ( const int key = GetKeyPressed() )
+    {
+        KeyEvent ev;
+        ev.key = key;
+        ev.code = key;
+        ev.pressed = true;
+        ev.alt = IsKeyDown( KEY_LEFT_ALT ) || IsKeyDown( KEY_RIGHT_ALT );
+        ev.shift = IsKeyDown( KEY_LEFT_SHIFT ) || IsKeyDown( KEY_RIGHT_SHIFT );
+        ev.ctrl = IsKeyDown( KEY_LEFT_CONTROL ) || IsKeyDown( KEY_RIGHT_CONTROL );
+        events.push_back( ev );
+    }
+
+    while ( const int ch = GetCharPressed() )
+    {
+        events.push_back( TextEvent { static_cast<uint32_t> ( ch ) } );
+    }
+
+    const Vector2 mouse = GetMousePosition();
+    if ( !w.mouse_initialized_ || mouse.x != w.last_mouse_x_ || mouse.y != w.last_mouse_y_ )
+    {
+        w.last_mouse_x_ = mouse.x;
+        w.last_mouse_y_ = mouse.y;
+        w.mouse_initialized_ = true;
+        events.push_back( MouseMoveEvent { mouse.x, mouse.y } );
+    }
+
+    const auto push_mouse_btn = [&]( int ray_btn, int mapped_btn )
+    {
+        if ( IsMouseButtonPressed( ray_btn ) )
+        {
+            events.push_back( MouseBtnEvent { mouse.x, mouse.y, mapped_btn } );
+        }
+    };
+    push_mouse_btn( MOUSE_BUTTON_LEFT, 0 );
+    push_mouse_btn( MOUSE_BUTTON_RIGHT, 1 );
+    push_mouse_btn( MOUSE_BUTTON_MIDDLE, 2 );
+
+    const float wheel = GetMouseWheelMove();
+    if ( wheel != 0.f )
+    {
+        events.push_back( MouseWheelEvent { wheel, mouse.x, mouse.y } );
+    }
+
+    return events;
+}
+
+inline std::vector<Event> Window::pollEvents()
+{
+    return poll_events( *this );
+}
 
 }  // namespace platform

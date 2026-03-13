@@ -14,6 +14,7 @@ include(FetchContent)
 
 if(EMSCRIPTEN)
     # Web build: Raylib (replaces SFML)
+    set(PLATFORM Web CACHE STRING "" FORCE)
     FetchContent_Declare(
         raylib
         GIT_REPOSITORY https://github.com/raysan5/raylib.git
@@ -60,9 +61,15 @@ else()
     message(FATAL_ERROR "Failed to configure Box2D v3.0.0 target")
 endif()
 
-find_package(nlohmann_json QUIET)
-if(nlohmann_json_FOUND)
-    message(STATUS "Found nlohmann_json package")
+if(EMSCRIPTEN)
+    # Use target-owned JSON dependency for cross-builds (avoid host include paths).
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(nlohmann_json)
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include/nlohmann/json.hpp")
     add_library(nlohmann_json INTERFACE)
     target_include_directories(nlohmann_json INTERFACE
@@ -71,13 +78,14 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
     add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
     message(STATUS "Using vendored nlohmann_json from external/")
 else()
-    message(FATAL_ERROR
-        "nlohmann_json not found. Install nlohmann-json3-dev or add external/nlohmann_json."
-    )
+    find_package(nlohmann_json REQUIRED)
+    message(STATUS "Found nlohmann_json package")
 endif()
 
-find_package(GTest REQUIRED)
-include(GoogleTest)
+if(NOT EMSCRIPTEN)
+    find_package(GTest REQUIRED)
+    include(GoogleTest)
+endif()
 
 # Data library (C)
 add_library(angry_data
@@ -138,12 +146,13 @@ if(EMSCRIPTEN)
     set(LEVELS_DIR "${CMAKE_SOURCE_DIR}/levels")
     target_link_options(${PROJECT_NAME} PRIVATE
         -sUSE_GLFW=3
+        -sFETCH=1
         -sALLOW_MEMORY_GROWTH=1
         -sMAX_WEBGL_VERSION=2
         -sEXPORTED_RUNTIME_METHODS=cwrap
         -sFORCE_FILESYSTEM=1
-        --preload-file "${ASSETS_DIR}@/assets"
-        --preload-file "${LEVELS_DIR}@/levels"
+        "SHELL:--preload-file ${ASSETS_DIR}@/assets"
+        "SHELL:--preload-file ${LEVELS_DIR}@/levels"
         -sASSERTIONS=1
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
@@ -161,88 +170,90 @@ else()
     )
 endif()
 
-# Smoke test (C)
-add_executable(angry_data_smoke
-    src/data/level_loader_smoke.cpp
-)
-target_include_directories(angry_data_smoke PRIVATE src)
-target_link_libraries(angry_data_smoke PRIVATE angry_data)
-target_compile_definitions(angry_data_smoke PRIVATE
-    ANGRY_MIPTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-)
-add_test(NAME angry_data_smoke COMMAND angry_data_smoke)
+if(NOT EMSCRIPTEN)
+    # Smoke test (C)
+    add_executable(angry_data_smoke
+        src/data/level_loader_smoke.cpp
+    )
+    target_include_directories(angry_data_smoke PRIVATE src)
+    target_link_libraries(angry_data_smoke PRIVATE angry_data)
+    target_compile_definitions(angry_data_smoke PRIVATE
+        ANGRY_MIPTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    add_test(NAME angry_data_smoke COMMAND angry_data_smoke)
 
-# UI/Render smoke tests (B)
-add_executable(angry_ui_render_tests
-    tests/ui_render_tests.cpp
-    src/render/particles.cpp
-    src/ui/view_utils.cpp
-)
-target_include_directories(angry_ui_render_tests PRIVATE src)
-target_link_libraries(angry_ui_render_tests PRIVATE
-    SFML::Graphics
-    SFML::System
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_ui_render_tests)
+    # UI/Render smoke tests (B)
+    add_executable(angry_ui_render_tests
+        tests/ui_render_tests.cpp
+        src/render/particles.cpp
+        src/ui/view_utils.cpp
+    )
+    target_include_directories(angry_ui_render_tests PRIVATE src)
+    target_link_libraries(angry_ui_render_tests PRIVATE
+        SFML::Graphics
+        SFML::System
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_ui_render_tests)
 
-# Data online client tests (no UI dependency)
-add_executable(angry_online_score_client_tests
-    tests/online_score_client_tests.cpp
-)
-target_include_directories(angry_online_score_client_tests PRIVATE src)
-target_link_libraries(angry_online_score_client_tests PRIVATE
-    angry_data
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_online_score_client_tests)
+    # Data online client tests (no UI dependency)
+    add_executable(angry_online_score_client_tests
+        tests/online_score_client_tests.cpp
+    )
+    target_include_directories(angry_online_score_client_tests PRIVATE src)
+    target_link_libraries(angry_online_score_client_tests PRIVATE
+        angry_data
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_online_score_client_tests)
 
-# Data session manager tests (no UI dependency)
-add_executable(angry_session_manager_tests
-    tests/session_manager_tests.cpp
-)
-target_include_directories(angry_session_manager_tests PRIVATE src)
-target_link_libraries(angry_session_manager_tests PRIVATE
-    angry_data
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_session_manager_tests)
+    # Data session manager tests (no UI dependency)
+    add_executable(angry_session_manager_tests
+        tests/session_manager_tests.cpp
+    )
+    target_include_directories(angry_session_manager_tests PRIVATE src)
+    target_link_libraries(angry_session_manager_tests PRIVATE
+        angry_data
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_session_manager_tests)
 
-# Data auth client tests (no UI dependency)
-add_executable(angry_auth_client_tests
-    tests/auth_client_tests.cpp
-)
-target_include_directories(angry_auth_client_tests PRIVATE src)
-target_link_libraries(angry_auth_client_tests PRIVATE
-    angry_data
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_auth_client_tests)
+    # Data auth client tests (no UI dependency)
+    add_executable(angry_auth_client_tests
+        tests/auth_client_tests.cpp
+    )
+    target_include_directories(angry_auth_client_tests PRIVATE src)
+    target_link_libraries(angry_auth_client_tests PRIVATE
+        angry_data
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_auth_client_tests)
 
-# Data account service tests (no UI dependency)
-add_executable(angry_account_service_tests
-    tests/account_service_tests.cpp
-)
-target_include_directories(angry_account_service_tests PRIVATE src)
-target_link_libraries(angry_account_service_tests PRIVATE
-    angry_data
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_account_service_tests)
+    # Data account service tests (no UI dependency)
+    add_executable(angry_account_service_tests
+        tests/account_service_tests.cpp
+    )
+    target_include_directories(angry_account_service_tests PRIVATE src)
+    target_link_libraries(angry_account_service_tests PRIVATE
+        angry_data
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_account_service_tests)
 
-# Physics engine behavior tests (A)
-add_executable(angry_physics_engine_tests
-    tests/physics_engine_tests.cpp
-)
-target_include_directories(angry_physics_engine_tests PRIVATE src)
-target_link_libraries(angry_physics_engine_tests PRIVATE
-    angry_physics
-    GTest::gtest
-    GTest::gtest_main
-)
-gtest_discover_tests(angry_physics_engine_tests)
+    # Physics engine behavior tests (A)
+    add_executable(angry_physics_engine_tests
+        tests/physics_engine_tests.cpp
+    )
+    target_include_directories(angry_physics_engine_tests PRIVATE src)
+    target_link_libraries(angry_physics_engine_tests PRIVATE
+        angry_physics
+        GTest::gtest
+        GTest::gtest_main
+    )
+    gtest_discover_tests(angry_physics_engine_tests)
+endif()

@@ -596,7 +596,7 @@ static platform::Texture make_flat_texture( platform::Color fill, platform::Colo
     }
     platform::Texture tex;
     tex.rl     = LoadTextureFromImage( img );
-    tex.loaded = IsTextureReady( tex.rl );
+    tex.loaded = IsTextureValid( tex.rl );
     UnloadImage( img );
     return tex;
 }
