@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  build-selfhosted:
+    name: Build (self-hosted Linux)
+    runs-on: [self-hosted, linux, x64, vps-ci]
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
+          whoami
+          hostname
+          pwd
+          ls -la
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          g++ --version
+          git --version
+          ccache --version
+          pkg-config --modversion openssl || true
+
+      - name: Export build/runtime paths
+        run: |
+          echo "CMAKE_PREFIX_PATH=/opt/sfml-3" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/opt/sfml-3/lib:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+
+      - name: Prepare ccache
+        run: |
+          mkdir -p "$HOME/.ccache"
+          ccache --set-config=max_size=2G
+          ccache --set-config=compression=true
+          ccache --set-config=compiler_check=content
+          ccache --show-config
+          ccache --show-stats || true
+
+      - name: Clean previous build directory
+        run: rm -rf build-selfhosted
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-selfhosted \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build-selfhosted --parallel 2
+
+      - name: Show ccache stats after build
+        run: ccache --show-stats
+
+      - name: Test
+        run: ctest --test-dir build-selfhosted --output-on-failure
+
+      - name: Show final ccache stats
+        if: always()
+        run: ccache --show-stats

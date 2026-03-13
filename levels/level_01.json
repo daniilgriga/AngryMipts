@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "id": 1,
+    "name": "First Steps",
+    "totalShots": 3,
+    "starThresholds": [
+      1000,
+      2500,
+      4000
+    ]
+  },
+  "slingshot": {
+    "position": [
+      150,
+      600
+    ],
+    "maxPull": 180
+  },
+  "projectiles": [
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Heavy"
+    }
+  ],
+  "blocks": [
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        800,
+        550
+      ],
+      "size": [
+        20,
+        100
+      ],
+      "angle": 0,
+      "hp": 50
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        900,
+        550
+      ],
+      "size": [
+        20,
+        100
+      ],
+      "angle": 0,
+      "hp": 50
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        850,
+        490
+      ],
+      "size": [
+        140,
+        20
+      ],
+      "angle": 0,
+      "hp": 50
+    }
+  ],
+  "targets": [
+    {
+      "position": [
+        850,
+        540
+      ],
+      "radius": 15,
+      "hp": 20,
+      "score": 1000
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+{
+  "meta": {
+    "id": 4,
+    "name": "level_4",
+    "totalShots": 5,
+    "starThresholds": [
+      1,
+      2,
+      3
+    ]
+  },
+  "slingshot": {
+    "position": [
+      295,
+      600
+    ],
+    "maxPull": 200
+  },
+  "projectiles": [
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Heavy"
+    },
+    {
+      "type": "Splitter"
+    },
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Heavy"
+    }
+  ],
+  "blocks": [
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        650,
+        549
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        730,
+        550
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        690,
+        490
+      ],
+      "angle": 90,
+      "hp": 35,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        830,
+        550
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        910,
+        550
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        870,
+        490
+      ],
+      "angle": 90,
+      "hp": 35,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        690,
+        430
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        870,
+        430
+      ],
+      "angle": 0,
+      "hp": 50,
+      "size": [
+        20,
+        100
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Stone",
+      "position": [
+        780,
+        470
+      ],
+      "angle": 90,
+      "hp": 90,
+      "size": [
+        20,
+        120
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Stone",
+      "position": [
+        780,
+        420
+      ],
+      "angle": 0,
+      "hp": 90,
+      "size": [
+        20,
+        80
+      ]
+    },
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        780,
+        370
+      ],
+      "angle": 90,
+      "hp": 35,
+      "size": [
+        20,
+        200
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "position": [
+        820,
+        440
+      ],
+      "radius": 20,
+      "hp": 20,
+      "score": 1000
+    },
+    {
+      "position": [
+        740,
+        440
+      ],
+      "radius": 20,
+      "hp": 20,
+      "score": 1000
+    }
+  ]
+}

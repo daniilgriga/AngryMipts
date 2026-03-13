@@ -1,0 +1,108 @@
+{
+  "meta": {
+    "id": 2,
+    "name": "Stone Tower",
+    "totalShots": 4,
+    "starThresholds": [
+      1500,
+      3200,
+      5200
+    ]
+  },
+  "slingshot": {
+    "position": [
+      160,
+      600
+    ],
+    "maxPull": 190
+  },
+  "projectiles": [
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Heavy"
+    },
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Heavy"
+    }
+  ],
+  "blocks": [
+    {
+      "shape": "rect",
+      "material": "Stone",
+      "position": [
+        920,
+        540
+      ],
+      "size": [
+        30,
+        120
+      ],
+      "angle": 0,
+      "hp": 90
+    },
+    {
+      "shape": "rect",
+      "material": "Stone",
+      "position": [
+        980,
+        540
+      ],
+      "size": [
+        30,
+        120
+      ],
+      "angle": 0,
+      "hp": 90
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        950,
+        468
+      ],
+      "size": [
+        140,
+        24
+      ],
+      "angle": 0,
+      "hp": 60
+    },
+    {
+      "shape": "circle",
+      "material": "Glass",
+      "position": [
+        950,
+        410
+      ],
+      "radius": 22,
+      "angle": 0,
+      "hp": 30
+    }
+  ],
+  "targets": [
+    {
+      "position": [
+        890,
+        510
+      ],
+      "radius": 18,
+      "hp": 25,
+      "score": 1200
+    },
+    {
+      "position": [
+        1010,
+        510
+      ],
+      "radius": 18,
+      "hp": 25,
+      "score": 1200
+    }
+  ]
+}

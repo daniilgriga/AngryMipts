@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>AngryMipts Web</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg0: #0c1628;
+      --bg1: #1d3f56;
+      --panel: rgba(8, 15, 28, 0.72);
+      --line: rgba(170, 215, 255, 0.35);
+      --text: #eef5ff;
+      --muted: #b6d0eb;
+      --accent: #84d4ff;
+      --accent-2: #ffd78a;
+      --shadow: rgba(0, 0, 0, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at 10% 15%, #295f7b66 0%, transparent 58%),
+        radial-gradient(900px 600px at 85% 20%, #79a0d033 0%, transparent 62%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .app {
+      width: min(1200px, 100%);
+      display: grid;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: 0 8px 30px var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.3px;
+    }
+
+    .title p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    button {
+      border: 1px solid #8fcfff88;
+      background: linear-gradient(180deg, #1f4f69, #163f55);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: #b2e3ffcc;
+      transform: translateY(-1px);
+    }
+
+    .frame {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 14px 38px var(--shadow);
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #000;
+      image-rendering: auto;
+      outline: none;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: linear-gradient(180deg, #10243aee, #0c192bee);
+      transition: opacity 220ms ease;
+      z-index: 5;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 3px solid #8bcfff4d;
+      border-top-color: var(--accent-2);
+      animation: spin 0.95s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status {
+      font-size: 14px;
+      color: #e9f4ff;
+      text-align: center;
+      max-width: 80%;
+    }
+
+    .hint {
+      margin-top: 2px;
+      font-size: 12px;
+      color: #b8d2ea;
+    }
+
+    .details {
+      margin: 0;
+      max-width: 86%;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.35;
+      color: #ffd9c8;
+      text-align: center;
+      display: none;
+    }
+
+    .details.visible {
+      display: block;
+    }
+
+    @media (max-width: 720px) {
+      .title h1 { font-size: 18px; }
+      .title p  { font-size: 12px; }
+      .frame { min-height: 56vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">
+        <h1>AngryMipts Web</h1>
+        <p>WASM build • press F11 in game or use fullscreen button</p>
+      </div>
+      <div class="actions">
+        <button id="fullscreen-btn" type="button">Fullscreen</button>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div id="overlay" class="overlay">
+        <div class="spinner" aria-hidden="true"></div>
+        <div id="status" class="status">Preparing WebAssembly runtime...</div>
+        <div class="hint">First load can take a few seconds</div>
+        <pre id="details" class="details"></pre>
+      </div>
+      <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const overlay = document.getElementById('overlay');
+    const statusEl = document.getElementById('status');
+    const detailsEl = document.getElementById('details');
+    const canvasEl = document.getElementById('canvas');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+    function focusCanvas() {
+      if (canvasEl && typeof canvasEl.focus === 'function') {
+        canvasEl.focus({ preventScroll: true });
+      }
+    }
+
+    function requestFullscreenSafe() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        return;
+      }
+
+      if (canvasEl && typeof canvasEl.requestFullscreen === 'function') {
+        canvasEl.requestFullscreen();
+        return;
+      }
+
+      if (Module && typeof Module.requestFullscreen === 'function') {
+        Module.requestFullscreen(false, false);
+      }
+    }
+
+    function setFatal(message, details) {
+      statusEl.textContent = message;
+      if (details) {
+        detailsEl.textContent = details;
+        detailsEl.classList.add('visible');
+      }
+      overlay.classList.remove('hidden');
+    }
+
+    var Module = {
+      canvas: canvasEl,
+      preRun: [],
+      postRun: [],
+      onAbort: function(reason) {
+        setFatal('Runtime aborted', String(reason || 'unknown reason'));
+      },
+      printErr: function(text) {
+        if (!text) return;
+        detailsEl.textContent = String(text);
+        detailsEl.classList.add('visible');
+      },
+      setStatus: function(text) {
+        if (text) statusEl.textContent = text;
+      },
+      monitorRunDependencies: function(left) {
+        if (left > 0) {
+          statusEl.textContent = 'Loading assets... ' + left;
+        } else {
+          statusEl.textContent = 'Starting game...';
+        }
+      },
+      onRuntimeInitialized: function() {
+        statusEl.textContent = 'Ready';
+        overlay.classList.add('hidden');
+        focusCanvas();
+      }
+    };
+
+    canvasEl.addEventListener('pointerdown', focusCanvas);
+    fullscreenBtn.addEventListener('click', requestFullscreenSafe);
+    window.addEventListener('keydown', function(event) {
+      const isFullscreenHotkey = event.key === 'F11' || (event.key === 'Enter' && event.altKey);
+      if (!isFullscreenHotkey) return;
+      event.preventDefault();
+      requestFullscreenSafe();
+    });
+    document.addEventListener('fullscreenchange', function() {
+      fullscreenBtn.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+      focusCanvas();
+    });
+
+    window.addEventListener('error', function(event) {
+      const args = event || {};
+
+      // Ignore non-fatal resource errors (for example favicon).
+      // If one of core runtime artifacts fails, keep it fatal.
+      const target = args.target || args.srcElement;
+      if (target && target !== window) {
+        const url = String(target.src || target.href || '');
+        if (!/AngryMipts\.(js|wasm|data)(\?|$)/i.test(url)) {
+          return;
+        }
+        setFatal('Core resource load error', url || 'unknown resource');
+        return;
+      }
+
+      const info = [
+        args.message || 'unknown error',
+        args.filename ? ('file: ' + args.filename) : '',
+        args.lineno ? ('line: ' + args.lineno + ':' + (args.colno || 0)) : ''
+      ].filter(Boolean).join('\n');
+      setFatal('Runtime error', info || 'unknown runtime error');
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+      const reason = event && event.reason ? String(event.reason) : 'unknown promise rejection';
+      setFatal('Unhandled rejection', reason);
+    });
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>
