@@ -141,7 +141,8 @@ int main()
     scenes.add_scene ( angry::SceneId::LevelSelect, std::move ( level_select ) );
     scenes.add_scene ( angry::SceneId::Game, std::make_unique<angry::GameScene> ( font, &accounts ) );
     scenes.add_scene ( angry::SceneId::Result, std::make_unique<angry::ResultScene> ( font ) );
-    scenes.switch_to ( angry::SceneId::Login );
+    scenes.switch_to (
+        accounts.isLoggedIn() ? angry::SceneId::Menu : angry::SceneId::Login );
 
     while ( window.isOpen() )
     {
