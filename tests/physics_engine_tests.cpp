@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,6 +100,22 @@ bool hasAbilityEventFor(
             const auto* ability = std::get_if<AbilityActivatedEvent>( &e );
             return ability != nullptr && ability->projectileType == type;
         } );
+}
+
+const ObjectSnapshot* findFirstActiveProjectile( const angry::WorldSnapshot& snapshot )
+{
+    auto it = std::find_if(
+        snapshot.objects.begin(),
+        snapshot.objects.end(),
+        []( const ObjectSnapshot& object )
+        {
+            return object.kind == ObjectSnapshot::Kind::Projectile && object.isActive;
+        } );
+    if ( it == snapshot.objects.end() )
+    {
+        return nullptr;
+    }
+    return &(*it);
 }
 
 }  // namespace
@@ -382,4 +399,185 @@ TEST( PhysicsEngineEvents, AbilityActivatedEventForAllAbilityProjectiles )
             << "missing AbilityActivatedEvent for projectileType="
             << static_cast<int>( projectileType );
     }
+}
+
+TEST( PhysicsEngineImpact, ProjectileBreaksBlockKeepsMotion )
+{
+    PhysicsEngine engine;
+
+    const float blockX = 520.0f;
+    const BlockData fragileWood{
+        Vec2{blockX, 480.0f},
+        Vec2{60.0f, 120.0f},
+        0.0f,
+        angry::BlockShape::Rect,
+        false,
+        false,
+        0.0f,
+        Material::Wood,
+        1.0f };
+    const TargetData farTarget{
+        Vec2{1100.0f, 450.0f},
+        12.0f,
+        999.0f,
+        100 };
+    const LevelData level = makeLevel(
+        601,
+        {ProjectileType::Standard},
+        {fragileWood},
+        {farTarget},
+        300,
+        500 );
+
+    engine.loadLevel( level );
+    runCommandsAndStep(
+        engine,
+        { LaunchCmd{Vec2{140.0f, 0.0f}} } );
+
+    bool blockDestroyed = false;
+    bool seenProjectileAfterBreak = false;
+    bool hasPrevAfterBreak = false;
+    Vec2 prevAfterBreakPos{};
+    float traveledAfterBreak = 0.0f;
+    for ( int i = 0; i < 120; ++i )
+    {
+        runCommandsAndStep( engine, {} );
+        const auto snapshot = engine.getSnapshot();
+        if ( snapshot.score >= 50 )
+        {
+            blockDestroyed = true;
+            if ( const ObjectSnapshot* projectile = findFirstActiveProjectile( snapshot ) )
+            {
+                seenProjectileAfterBreak = true;
+                if ( hasPrevAfterBreak )
+                {
+                    const float dx = projectile->positionPx.x - prevAfterBreakPos.x;
+                    const float dy = projectile->positionPx.y - prevAfterBreakPos.y;
+                    traveledAfterBreak += std::sqrt( dx * dx + dy * dy );
+                }
+                prevAfterBreakPos = projectile->positionPx;
+                hasPrevAfterBreak = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE( blockDestroyed );
+    EXPECT_TRUE( seenProjectileAfterBreak );
+    EXPECT_GT( traveledAfterBreak, 25.0f );
+}
+
+TEST( PhysicsEngineImpact, ProjectileHitsIndestructibleStops )
+{
+    PhysicsEngine engine;
+
+    const float blockX = 520.0f;
+    const BlockData indestructible{
+        Vec2{blockX, 500.0f},
+        Vec2{28.0f, 240.0f},
+        0.0f,
+        angry::BlockShape::Rect,
+        true,
+        true,
+        0.0f,
+        Material::Stone,
+        999.0f };
+    const TargetData farTarget{
+        Vec2{1100.0f, 450.0f},
+        12.0f,
+        999.0f,
+        100 };
+    const LevelData level = makeLevel(
+        602,
+        {ProjectileType::Standard},
+        {indestructible},
+        {farTarget},
+        300,
+        500 );
+
+    engine.loadLevel( level );
+    runCommandsAndStep(
+        engine,
+        { LaunchCmd{Vec2{140.0f, 0.0f}} } );
+
+    float maxProjectileX = -1.0f;
+    for ( int i = 0; i < 120; ++i )
+    {
+        runCommandsAndStep( engine, {} );
+        const auto snapshot = engine.getSnapshot();
+        if ( const ObjectSnapshot* projectile = findFirstActiveProjectile( snapshot ) )
+        {
+            maxProjectileX = std::max( maxProjectileX, projectile->positionPx.x );
+        }
+    }
+
+    EXPECT_EQ( engine.getSnapshot().score, 0 );
+    EXPECT_GT( maxProjectileX, 0.0f );
+    EXPECT_LT( maxProjectileX, blockX + 25.0f );
+}
+
+TEST( PhysicsEngineImpact, NoEnergyExplosion )
+{
+    PhysicsEngine engine;
+
+    std::vector<BlockData> fragileBlocks;
+    for ( int i = 0; i < 4; ++i )
+    {
+        fragileBlocks.push_back( BlockData{
+            Vec2{500.0f + static_cast<float>( i ) * 70.0f, 440.0f},
+            Vec2{30.0f, 30.0f},
+            0.0f,
+            angry::BlockShape::Rect,
+            false,
+            false,
+            0.0f,
+            Material::Wood,
+            1.0f } );
+    }
+
+    const TargetData farTarget{
+        Vec2{1180.0f, 450.0f},
+        12.0f,
+        999.0f,
+        100 };
+    const LevelData level = makeLevel(
+        603,
+        {ProjectileType::Heavy},
+        fragileBlocks,
+        {farTarget},
+        400,
+        600 );
+
+    engine.loadLevel( level );
+    runCommandsAndStep(
+        engine,
+        { LaunchCmd{Vec2{150.0f, 0.0f}} } );
+
+    bool hasPrevPos = false;
+    Vec2 prevPos{};
+    float maxEstimatedSpeedMps = 0.0f;
+
+    for ( int i = 0; i < 180; ++i )
+    {
+        runCommandsAndStep( engine, {} );
+        const auto snapshot = engine.getSnapshot();
+        const ObjectSnapshot* projectile = findFirstActiveProjectile( snapshot );
+        if ( projectile == nullptr )
+        {
+            continue;
+        }
+
+        if ( hasPrevPos )
+        {
+            const float dx = projectile->positionPx.x - prevPos.x;
+            const float dy = projectile->positionPx.y - prevPos.y;
+            const float speedPxPerSec = std::sqrt( dx * dx + dy * dy ) * 60.0f;
+            const float speedMps = speedPxPerSec / angry::PIXELS_PER_METER;
+            maxEstimatedSpeedMps = std::max( maxEstimatedSpeedMps, speedMps );
+        }
+        prevPos = projectile->positionPx;
+        hasPrevPos = true;
+    }
+
+    EXPECT_GT( engine.getSnapshot().score, 0 );
+    EXPECT_LT( maxEstimatedSpeedMps, 30.0f );
 }

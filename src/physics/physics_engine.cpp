@@ -32,6 +32,13 @@ constexpr float kDamageMinSpeedMps = 1.0f;
 constexpr float kCollisionEventMinSpeedMps = 0.7f;
 constexpr float kDamageScale = 16.0f;
 constexpr float kBlockVsBlockDamageMultiplier = 0.15f;
+// Stage 0 baseline tuning for projectile impact carry-through patch.
+constexpr float kBreakCarryMinSpeedMps = 2.2f;
+constexpr float kBreakCarryRetainTangential = 0.80f;
+constexpr float kBreakCarryRetainNormal = 0.35f;
+constexpr float kBreakCarryImpulseBoostMps = 0.8f;
+constexpr float kPostBreakDampingGraceSec = 0.12f;
+constexpr float kBreakCarryMaxSpeedMps = 28.0f;
 constexpr float kFloorImpactDamageMultiplier = 0.75f;
 constexpr float kFloorContactMinNormalY = 0.75f;
 constexpr float kFloorContactBandTopPx = 30.0f;
@@ -156,6 +163,103 @@ inline int blockDestroyedScore(Material material)
     }
 
     return 20;
+}
+
+struct ProjectileImpactOutcome
+{
+    bool willBreak = false;
+    float blockDamage = 0.0f;
+    bool hasVelocityCorrection = false;
+    b2Vec2 correctedProjectileVelocity = b2Vec2{0.0f, 0.0f};
+};
+
+inline ProjectileImpactOutcome resolveProjectileImpactOutcome(
+    float baseDamage,
+    float blockHp,
+    Material blockMaterial,
+    ProjectileType projectileType,
+    b2Vec2 projectileVelocity,
+    b2Vec2 projectileToBlockNormal)
+{
+    ProjectileImpactOutcome outcome;
+    outcome.blockDamage = baseDamage
+        * projectileDamageMultiplier(projectileType)
+        * materialDamageMultiplier(blockMaterial);
+    if (!std::isfinite(outcome.blockDamage) || outcome.blockDamage < 0.0f)
+    {
+        outcome.blockDamage = 0.0f;
+    }
+    outcome.willBreak = outcome.blockDamage >= std::max(0.0f, blockHp);
+
+    if (outcome.willBreak)
+    {
+        const float speed = std::sqrt(
+            projectileVelocity.x * projectileVelocity.x
+            + projectileVelocity.y * projectileVelocity.y);
+        if (std::isfinite(speed) && speed > 0.0001f)
+        {
+            // Build safe contact normal and decompose velocity.
+            float nx = projectileToBlockNormal.x;
+            float ny = projectileToBlockNormal.y;
+            const float nLen = std::sqrt(nx * nx + ny * ny);
+            if (nLen > 0.0001f)
+            {
+                nx /= nLen;
+                ny /= nLen;
+            }
+            else
+            {
+                nx = projectileVelocity.x / speed;
+                ny = projectileVelocity.y / speed;
+            }
+
+            const float vn = projectileVelocity.x * nx + projectileVelocity.y * ny;
+            const b2Vec2 vNormal = b2Vec2{nx * vn, ny * vn};
+            const b2Vec2 vTangential = b2Vec2{
+                projectileVelocity.x - vNormal.x,
+                projectileVelocity.y - vNormal.y};
+
+            b2Vec2 correctedVelocity = b2Vec2{
+                vTangential.x * kBreakCarryRetainTangential + vNormal.x * kBreakCarryRetainNormal,
+                vTangential.y * kBreakCarryRetainTangential + vNormal.y * kBreakCarryRetainNormal};
+
+            float correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            const b2Vec2 velocityDir = b2Vec2{
+                projectileVelocity.x / speed,
+                projectileVelocity.y / speed};
+
+            if (correctedSpeed < kBreakCarryMinSpeedMps)
+            {
+                const float add = kBreakCarryMinSpeedMps - correctedSpeed;
+                correctedVelocity.x += velocityDir.x * add;
+                correctedVelocity.y += velocityDir.y * add;
+                correctedSpeed = kBreakCarryMinSpeedMps;
+            }
+
+            correctedVelocity.x += velocityDir.x * kBreakCarryImpulseBoostMps;
+            correctedVelocity.y += velocityDir.y * kBreakCarryImpulseBoostMps;
+
+            correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            if (correctedSpeed > kBreakCarryMaxSpeedMps)
+            {
+                const float scale = kBreakCarryMaxSpeedMps / correctedSpeed;
+                correctedVelocity.x *= scale;
+                correctedVelocity.y *= scale;
+            }
+
+            if (std::isfinite(correctedVelocity.x) && std::isfinite(correctedVelocity.y))
+            {
+                outcome.hasVelocityCorrection = true;
+                outcome.correctedProjectileVelocity = correctedVelocity;
+            }
+        }
+    }
+
+    return outcome;
 }
 
 inline float computeBottomOffsetPx(const BlockData& block)
@@ -397,6 +501,13 @@ void PhysicsEngine::step(float dt)
 
     for (BodyBinding& binding : bodies_)
     {
+        if (binding.kind == ObjectSnapshot::Kind::Projectile && binding.postBreakDampingGraceSec > 0.0f)
+        {
+            binding.postBreakDampingGraceSec = std::max(
+                0.0f,
+                binding.postBreakDampingGraceSec - clampedDt);
+        }
+
         if (!binding.isBubbled)
         {
             continue;
@@ -573,6 +684,17 @@ void PhysicsEngine::step(float dt)
     {
         pendingDamageById.reserve(static_cast<std::size_t>(contactEvents.hitCount));
     }
+    struct PendingProjectileVelocityCorrection
+    {
+        b2BodyId projectileBodyId = b2_nullBodyId;
+        b2Vec2 correctedVelocity = b2Vec2{0.0f, 0.0f};
+        bool applyDampingGrace = false;
+    };
+    std::unordered_map<std::uint64_t, PendingProjectileVelocityCorrection> pendingProjectileCorrectionsByBody;
+    if (contactEvents.hitCount > 0)
+    {
+        pendingProjectileCorrectionsByBody.reserve(static_cast<std::size_t>(contactEvents.hitCount));
+    }
     for (int i = 0; i < contactEvents.hitCount; ++i)
     {
         const b2ContactHitEvent& hit = contactEvents.hitEvents[static_cast<size_t>(i)];
@@ -663,24 +785,86 @@ void PhysicsEngine::step(float dt)
         const bool aIsDestructible = isDestructibleKind(bindingA->kind) && bindingA->isDestructible;
         const bool bIsDestructible = isDestructibleKind(bindingB->kind) && bindingB->isDestructible;
 
-        auto applyScaledDamage = [&pendingDamageById](const BodyBinding* binding, float damage)
-        {
-            const float scaledDamage = damage * materialDamageMultiplier(binding->material);
-            pendingDamageById[binding->id] += scaledDamage;
-        };
-
         if (aIsProjectile && bIsDestructible)
         {
-            applyScaledDamage(
-                bindingB,
-                baseDamage * projectileDamageMultiplier(bindingA->projectileType));
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingA->bodyId)
+                ? b2Body_GetLinearVelocity(bindingA->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            const ProjectileImpactOutcome outcome = resolveProjectileImpactOutcome(
+                baseDamage,
+                bindingB->hp,
+                bindingB->material,
+                bindingA->projectileType,
+                projectileVelocity,
+                hit.normal);
+            pendingDamageById[bindingB->id] += outcome.blockDamage;
+            if (outcome.willBreak && outcome.hasVelocityCorrection)
+            {
+                const std::uint64_t key = bodyIdKey(bindingA->bodyId);
+                PendingProjectileVelocityCorrection candidate{
+                    bindingA->bodyId,
+                    outcome.correctedProjectileVelocity,
+                    true};
+                const auto [it, inserted] = pendingProjectileCorrectionsByBody.emplace(key, candidate);
+                if (!inserted)
+                {
+                    const float prevSpeed2 =
+                        it->second.correctedVelocity.x * it->second.correctedVelocity.x
+                        + it->second.correctedVelocity.y * it->second.correctedVelocity.y;
+                    const float newSpeed2 =
+                        candidate.correctedVelocity.x * candidate.correctedVelocity.x
+                        + candidate.correctedVelocity.y * candidate.correctedVelocity.y;
+                    if (newSpeed2 > prevSpeed2)
+                    {
+                        it->second = candidate;
+                    }
+                    else
+                    {
+                        it->second.applyDampingGrace = it->second.applyDampingGrace || candidate.applyDampingGrace;
+                    }
+                }
+            }
             continue;
         }
         if (bIsProjectile && aIsDestructible)
         {
-            applyScaledDamage(
-                bindingA,
-                baseDamage * projectileDamageMultiplier(bindingB->projectileType));
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingB->bodyId)
+                ? b2Body_GetLinearVelocity(bindingB->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            const ProjectileImpactOutcome outcome = resolveProjectileImpactOutcome(
+                baseDamage,
+                bindingA->hp,
+                bindingA->material,
+                bindingB->projectileType,
+                projectileVelocity,
+                b2Vec2{-hit.normal.x, -hit.normal.y});
+            pendingDamageById[bindingA->id] += outcome.blockDamage;
+            if (outcome.willBreak && outcome.hasVelocityCorrection)
+            {
+                const std::uint64_t key = bodyIdKey(bindingB->bodyId);
+                PendingProjectileVelocityCorrection candidate{
+                    bindingB->bodyId,
+                    outcome.correctedProjectileVelocity,
+                    true};
+                const auto [it, inserted] = pendingProjectileCorrectionsByBody.emplace(key, candidate);
+                if (!inserted)
+                {
+                    const float prevSpeed2 =
+                        it->second.correctedVelocity.x * it->second.correctedVelocity.x
+                        + it->second.correctedVelocity.y * it->second.correctedVelocity.y;
+                    const float newSpeed2 =
+                        candidate.correctedVelocity.x * candidate.correctedVelocity.x
+                        + candidate.correctedVelocity.y * candidate.correctedVelocity.y;
+                    if (newSpeed2 > prevSpeed2)
+                    {
+                        it->second = candidate;
+                    }
+                    else
+                    {
+                        it->second.applyDampingGrace = it->second.applyDampingGrace || candidate.applyDampingGrace;
+                    }
+                }
+            }
             continue;
         }
         if (aIsProjectile && bIsProjectile)
@@ -690,8 +874,8 @@ void PhysicsEngine::step(float dt)
         if (aIsDestructible && bIsDestructible)
         {
             const float structuralDamage = baseDamage * kBlockVsBlockDamageMultiplier;
-            applyScaledDamage(bindingA, structuralDamage);
-            applyScaledDamage(bindingB, structuralDamage);
+            pendingDamageById[bindingA->id] += structuralDamage * materialDamageMultiplier(bindingA->material);
+            pendingDamageById[bindingB->id] += structuralDamage * materialDamageMultiplier(bindingB->material);
         }
     }
 
@@ -761,6 +945,40 @@ void PhysicsEngine::step(float dt)
         bodies_.pop_back();
     }
 
+    for (const auto& item : pendingProjectileCorrectionsByBody)
+    {
+        const PendingProjectileVelocityCorrection& correction = item.second;
+        if (B2_IS_NON_NULL(correction.projectileBodyId) && b2Body_IsValid(correction.projectileBodyId))
+        {
+            b2Vec2 correctedVelocity = correction.correctedVelocity;
+            const float correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            if (!std::isfinite(correctedSpeed))
+            {
+                continue;
+            }
+            if (correctedSpeed > kBreakCarryMaxSpeedMps && correctedSpeed > 0.0001f)
+            {
+                const float scale = kBreakCarryMaxSpeedMps / correctedSpeed;
+                correctedVelocity.x *= scale;
+                correctedVelocity.y *= scale;
+            }
+            b2Body_SetLinearVelocity(correction.projectileBodyId, correctedVelocity);
+
+            if (correction.applyDampingGrace)
+            {
+                BodyBinding* projectile = findBinding(correction.projectileBodyId);
+                if (projectile != nullptr && projectile->kind == ObjectSnapshot::Kind::Projectile)
+                {
+                    projectile->postBreakDampingGraceSec = std::max(
+                        projectile->postBreakDampingGraceSec,
+                        kPostBreakDampingGraceSec);
+                }
+            }
+        }
+    }
+
     // Apply rolling slowdown to all dynamic gameplay bodies touching surfaces.
     for (const BodyBinding& binding : bodies_)
     {
@@ -796,7 +1014,14 @@ void PhysicsEngine::step(float dt)
 
         if (binding.kind == ObjectSnapshot::Kind::Projectile)
         {
-            applySurfaceDamping(binding.bodyId, 0.97f, 0.97f);
+            if (binding.postBreakDampingGraceSec > 0.0f)
+            {
+                applySurfaceDamping(binding.bodyId, 0.992f, 0.992f);
+            }
+            else
+            {
+                applySurfaceDamping(binding.bodyId, 0.97f, 0.97f);
+            }
         }
         else
         {
@@ -1067,7 +1292,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
                     if (speed > 0.001f)
                     {
-                        constexpr float kDasherBoostMultiplier = 1.35f;
+                        constexpr float kDasherBoostMultiplier = 1.86f;
                         b2Body_SetLinearVelocity(
                             activeProjectileBodyId_,
                             b2Vec2{velocity.x * kDasherBoostMultiplier, velocity.y * kDasherBoostMultiplier});
@@ -1335,9 +1560,9 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                 }
                 else if (activeProjectileType_ == ProjectileType::Bomber)
                 {
-                    constexpr float kExplosionRadiusPx = 90.0f;
+                    constexpr float kExplosionRadiusPx = 124.2f;
                     constexpr float kExplosionMaxDamage = 60.0f;
-                    constexpr float kExplosionImpulse = 5.0f;
+                    constexpr float kExplosionImpulse = 6.5f;
                     constexpr float kExplosionCloseRangeLimiter = 0.85f;
 
                     const EntityId bomberId = projectile->id;

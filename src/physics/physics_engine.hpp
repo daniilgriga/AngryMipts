@@ -49,6 +49,7 @@ private:
         Vec2 lastPositionPx{};
         float lastAngleDeg = 0.0f;
         ProjectileType projectileType = ProjectileType::Standard;
+        float postBreakDampingGraceSec = 0.0f;
         int settledFrames = 0;
         float settledTimeSec = 0.0f;
         Vec2 boomerangStartPx{};
