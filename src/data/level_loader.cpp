@@ -21,6 +21,7 @@ using Json = nlohmann::json;
 
 constexpr float kWorldWidthPx = 1920.0f;
 constexpr float kWorldHeightPx = 1080.0f;
+constexpr float kTriangleMinTwiceAreaPx2 = 1e-3f;
 
 const Json& requireField( const Json& object, const std::string& key, const std::string& context )
 {
@@ -119,6 +120,75 @@ Vec2 parseVec2( const Json& value, const std::string& context )
     };
 }
 
+float triangleTwiceArea( const std::vector<Vec2>& vertices )
+{
+    if ( vertices.size() != 3 )
+    {
+        return 0.0f;
+    }
+
+    float twiceArea = 0.0f;
+    for ( std::size_t i = 0; i < vertices.size(); ++i )
+    {
+        const Vec2& current = vertices[i];
+        const Vec2& next = vertices[( i + 1u ) % vertices.size()];
+        twiceArea += current.x * next.y - next.x * current.y;
+    }
+
+    return twiceArea;
+}
+
+std::vector<Vec2> parseTriangleVertices( const Json& value, const std::string& context )
+{
+    if ( !value.is_array() )
+    {
+        throw std::runtime_error( context + ": expected array of 3 points" );
+    }
+    if ( value.size() != 3 )
+    {
+        throw std::runtime_error( context + ": expected exactly 3 points" );
+    }
+
+    std::vector<Vec2> vertices;
+    vertices.reserve( 3 );
+    for ( std::size_t i = 0; i < value.size(); ++i )
+    {
+        vertices.push_back( parseVec2( value.at( i ), context + "[" + std::to_string( i ) + "]" ) );
+    }
+
+    const float twiceArea = triangleTwiceArea( vertices );
+    if ( std::abs( twiceArea ) <= kTriangleMinTwiceAreaPx2 )
+    {
+        throw std::runtime_error( context + ": degenerate triangle (area is zero)" );
+    }
+
+    // Normalize winding for downstream consumers.
+    if ( twiceArea < 0.0f )
+    {
+        std::reverse( vertices.begin(), vertices.end() );
+    }
+
+    return vertices;
+}
+
+Vec2 triangleBoundsSize( const std::vector<Vec2>& vertices )
+{
+    float minX = vertices.front().x;
+    float maxX = vertices.front().x;
+    float minY = vertices.front().y;
+    float maxY = vertices.front().y;
+
+    for ( const Vec2& point : vertices )
+    {
+        minX = std::min( minX, point.x );
+        maxX = std::max( maxX, point.x );
+        minY = std::min( minY, point.y );
+        maxY = std::max( maxY, point.y );
+    }
+
+    return { maxX - minX, maxY - minY };
+}
+
 void validateInsideWorld( const Vec2& pointPx, const std::string& context )
 {
     if ( pointPx.x <= 0.0f || pointPx.y <= 0.0f )
@@ -157,7 +227,7 @@ Material parseMaterial( const std::string& value, const std::string& context )
 
 ProjectileType parseProjectileType( const std::string& value, const std::string& context )
 {
-    if ( value == "Striker" || value == "Standard")
+    if ( value == "Striker" || value == "Standard" )
     {
         return ProjectileType::Standard;
     }
@@ -360,13 +430,32 @@ BlockData parseBlock( const Json& value, std::size_t index )
     }
     else if ( shape == "triangle" )
     {
-        block.sizePx = parseVec2( requireField( value, "size", context ), context + ".size" );
+        block.shape = BlockShape::Triangle;
+        block.radiusPx = 0.0f;
+
+        if ( const auto verticesIt = value.find( "vertices" ); verticesIt != value.end() )
+        {
+            block.triangleLocalVerticesPx =
+                parseTriangleVertices( *verticesIt, context + ".vertices" );
+        }
+
+        if ( const auto sizeIt = value.find( "size" ); sizeIt != value.end() )
+        {
+            block.sizePx = parseVec2( *sizeIt, context + ".size" );
+        }
+        else if ( !block.triangleLocalVerticesPx.empty() )
+        {
+            block.sizePx = triangleBoundsSize( block.triangleLocalVerticesPx );
+        }
+        else
+        {
+            throw std::runtime_error( context + ": triangle requires 'vertices' or legacy 'size'" );
+        }
+
         if ( block.sizePx.x <= 0.0f || block.sizePx.y <= 0.0f )
         {
             throw std::runtime_error( context + ".size: width and height must be > 0" );
         }
-        block.radiusPx = 0.0f;
-        block.shape = BlockShape::Triangle;
     }
     else
     {
@@ -534,8 +623,8 @@ std::vector<LevelMeta> LevelLoader::loadAllMeta( const std::string& levelsDir ) 
             }
             catch ( const std::exception& error )
             {
-                Logger::error( "Skipping invalid level '{}': {}",
-                               entry.path().string(), error.what() );
+                Logger::error( "Skipping invalid level '{}': {}", entry.path().string(),
+                               error.what() );
             }
         }
 

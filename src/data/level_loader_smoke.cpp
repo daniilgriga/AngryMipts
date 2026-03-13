@@ -31,6 +31,7 @@ int main()
             ( levelsDir / "level_01.json" ).string(),
             ( levelsDir / "level_02.json" ).string(),
             ( levelsDir / "level_03.json" ).string(),
+            ( levelsDir / "level_020.json" ).string(),
         };
 
         for ( const std::string& path : levelFiles )
@@ -38,6 +39,21 @@ int main()
             const angry::LevelData level = loader.load( path );
             std::cout << "Loaded level id=" << level.meta.id << " name='" << level.meta.name
                       << "'\n";
+
+            if ( level.meta.id == 20 )
+            {
+                bool hasTriangleVertices = false;
+                for ( const angry::BlockData& block : level.blocks )
+                {
+                    if ( block.shape == angry::BlockShape::Triangle &&
+                         !block.triangleLocalVerticesPx.empty() )
+                    {
+                        hasTriangleVertices = true;
+                        break;
+                    }
+                }
+                expect( hasTriangleVertices, "level 20 must include triangle vertices" );
+            }
         }
 
         const std::vector<angry::LevelMeta> allMeta = loader.loadAllMeta( levelsDir.string() );
