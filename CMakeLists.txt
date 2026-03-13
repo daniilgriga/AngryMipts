@@ -17,8 +17,8 @@ if(EMSCRIPTEN)
     set(PLATFORM Web CACHE STRING "" FORCE)
     FetchContent_Declare(
         raylib
-        GIT_REPOSITORY https://github.com/raysan5/raylib.git
-        GIT_TAG 5.5
+        URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP OFF
     )
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
@@ -44,12 +44,21 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/box2d/CMakeLists.txt")
     message(STATUS "Using vendored external/box2d (expected API: v3.0.0)")
     add_subdirectory(external/box2d)
 else()
-    message(STATUS "Fetching box2d v3.0.0 from GitHub")
-    FetchContent_Declare(
-        box2d
-        GIT_REPOSITORY https://github.com/erincatto/box2d.git
-        GIT_TAG v3.0.0
-    )
+    if(EMSCRIPTEN)
+        message(STATUS "Fetching box2d v3.0.0 from release archive")
+        FetchContent_Declare(
+            box2d
+            URL https://github.com/erincatto/box2d/archive/refs/tags/v3.0.0.tar.gz
+            DOWNLOAD_EXTRACT_TIMESTAMP OFF
+        )
+    else()
+        message(STATUS "Fetching box2d v3.0.0 from GitHub")
+        FetchContent_Declare(
+            box2d
+            GIT_REPOSITORY https://github.com/erincatto/box2d.git
+            GIT_TAG v3.0.0
+        )
+    endif()
     FetchContent_MakeAvailable(box2d)
 endif()
 
@@ -65,8 +74,8 @@ if(EMSCRIPTEN)
     # Use target-owned JSON dependency for cross-builds (avoid host include paths).
     FetchContent_Declare(
         nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.11.3
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP OFF
     )
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(nlohmann_json)
