@@ -25,6 +25,12 @@ void SessionManager::loadSession()
     token_.clear();
     username_.clear();
 
+    if ( filepath_.empty() )
+    {
+        Logger::info( "Session load skipped: empty filepath" );
+        return;
+    }
+
     const std::filesystem::path path( filepath_ );
     if ( !std::filesystem::exists( path ) )
     {
@@ -79,6 +85,12 @@ void SessionManager::loadSession()
 
 void SessionManager::saveSession() const
 {
+    if ( filepath_.empty() )
+    {
+        Logger::info( "Session save skipped: empty filepath" );
+        return;
+    }
+
     try
     {
         const std::filesystem::path path( filepath_ );
@@ -119,6 +131,12 @@ void SessionManager::clearSession()
 {
     token_.clear();
     username_.clear();
+
+    if ( filepath_.empty() )
+    {
+        Logger::info( "Session clear skipped: empty filepath" );
+        return;
+    }
 
     try
     {

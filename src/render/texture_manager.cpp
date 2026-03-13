@@ -1,4 +1,9 @@
 #include "render/texture_manager.hpp"
+#include "data/logger.hpp"
+
+#ifndef __EMSCRIPTEN__
+#include <SFML/Graphics.hpp>
+#endif
 
 #include <cmath>
 #include <cstdlib>
@@ -38,7 +43,9 @@ std::string resolveProjectPath( const std::filesystem::path& relativePath )
     return relativePath.string();
 }
 
-sf::Texture render_texture ( const std::string& name,
+#ifndef __EMSCRIPTEN__
+
+platform::Texture render_texture ( const std::string& name,
                              const std::function<void ( sf::RenderTexture& )>& draw_fn )
 {
     sf::RenderTexture canvas ( {kTexSize, kTexSize} );
@@ -68,7 +75,29 @@ void draw_base_rect ( sf::RenderTexture& canvas, sf::Color color )
     canvas.draw ( rect );
 }
 
+#else  // __EMSCRIPTEN__ — Raylib texture generation
+
+platform::Texture render_texture ( const std::string& /*name*/,
+                             const std::function<void ( platform::RenderTexture& )>& draw_fn )
+{
+    platform::RenderTexture canvas;
+    canvas.create ( kTexSize, kTexSize );
+    canvas.clear ( platform::Color::Transparent );
+    draw_fn ( canvas );
+    canvas.display();
+    return canvas.getTexture();
+}
+
+void draw_base_rect ( platform::RenderTexture& canvas, platform::Color color )
+{
+    ::DrawRectangle ( 0, 0, kTexSize, kTexSize, color.to_rl() );
+}
+
+#endif
+
 }  // namespace
+
+#ifndef __EMSCRIPTEN__
 
 void TextureManager::generate_all()
 {
@@ -554,14 +583,97 @@ void TextureManager::generate_all()
 
     generated_ = true;
 }
+#else  // __EMSCRIPTEN__ — Raylib texture loading from pre-generated assets
 
-const sf::Texture& TextureManager::get ( const std::string& key )
+static platform::Texture make_flat_texture( platform::Color fill, platform::Color detail = {0,0,0,0} )
+{
+    ::Image img = GenImageColor( kTexSize, kTexSize, fill.to_rl() );
+    if ( detail.a > 0 )
+    {
+        // Draw a simple highlight circle
+        ImageDrawCircle( &img, kTexSize/2, kTexSize/2, kTexSize/3, detail.to_rl() );
+    }
+    platform::Texture tex;
+    tex.rl     = LoadTextureFromImage( img );
+    tex.loaded = IsTextureValid( tex.rl );
+    tex.setSmooth ( true );
+    UnloadImage( img );
+    return tex;
+}
+
+static platform::Texture load_generated_texture_or_fallback(
+    const std::string& file_name,
+    platform::Color fallback_fill,
+    platform::Color fallback_detail )
+{
+    const std::string path = "/assets/textures/generated/" + file_name;
+
+    platform::Texture tex;
+    tex.rl = LoadTexture ( path.c_str() );
+    tex.loaded = IsTextureValid ( tex.rl );
+    if ( tex.loaded )
+    {
+        tex.setSmooth ( true );
+        return tex;
+    }
+
+    Logger::error (
+        "TextureManager(web): failed to load '{}', using flat fallback",
+        path );
+    return make_flat_texture ( fallback_fill, fallback_detail );
+}
+
+void TextureManager::generate_all()
+{
+    if ( generated_ ) return;
+    textures_.clear();
+
+    textures_["block_wood"] = load_generated_texture_or_fallback(
+        "block_wood.png", {156, 103, 56}, {182, 122, 68, 80} );
+    textures_["block_stone"] = load_generated_texture_or_fallback(
+        "block_stone.png", {146, 151, 158}, {96, 101, 108, 80} );
+    textures_["block_glass"] = load_generated_texture_or_fallback(
+        "block_glass.png", {170, 220, 245, 135}, {255, 255, 255, 60} );
+    textures_["block_ice"] = load_generated_texture_or_fallback(
+        "block_ice.png", {198, 231, 255, 170}, {238, 248, 255, 80} );
+
+    textures_["proj_standard"] = load_generated_texture_or_fallback(
+        "proj_standard.png", {204, 72, 68}, {255, 178, 165, 80} );
+    textures_["proj_heavy"] = load_generated_texture_or_fallback(
+        "proj_heavy.png", {86, 58, 124}, {170, 130, 214, 80} );
+    textures_["proj_splitter"] = load_generated_texture_or_fallback(
+        "proj_splitter.png", {65, 150, 214}, {212, 240, 255, 80} );
+    textures_["proj_dasher"] = load_generated_texture_or_fallback(
+        "proj_dasher.png", {242, 156, 66}, {255, 233, 178, 80} );
+    textures_["proj_bomber"] = load_generated_texture_or_fallback(
+        "proj_bomber.png", {60, 64, 76}, {188, 194, 214, 40} );
+    textures_["proj_dropper"] = load_generated_texture_or_fallback(
+        "proj_dropper.png", {74, 176, 140}, {198, 244, 224, 70} );
+    textures_["proj_boomerang"] = load_generated_texture_or_fallback(
+        "proj_boomerang.png", {150, 190, 76}, {240, 252, 196, 80} );
+    textures_["proj_bubbler"] = load_generated_texture_or_fallback(
+        "proj_bubbler.png", {86, 190, 236}, {230, 248, 255, 74} );
+    textures_["proj_inflater"] = load_generated_texture_or_fallback(
+        "proj_inflater.png", {230, 110, 170}, {255, 200, 230, 80} );
+
+    textures_["target"] = load_generated_texture_or_fallback(
+        "target.png", {68, 148, 64}, {156, 235, 125, 80} );
+    textures_["slingshot_wood"] = load_generated_texture_or_fallback(
+        "slingshot_wood.png", {118, 80, 46}, {138, 92, 56, 80} );
+
+    generated_ = true;
+}
+
+#endif  // __EMSCRIPTEN__
+
+
+const platform::Texture& TextureManager::get ( const std::string& key )
 {
     generate_all();
     return textures_.at ( key );
 }
 
-const sf::Texture& TextureManager::block ( Material material )
+const platform::Texture& TextureManager::block ( Material material )
 {
     switch ( material )
     {
@@ -577,7 +689,7 @@ const sf::Texture& TextureManager::block ( Material material )
     }
 }
 
-const sf::Texture& TextureManager::projectile ( ProjectileType type )
+const platform::Texture& TextureManager::projectile ( ProjectileType type )
 {
     switch ( type )
     {
@@ -603,12 +715,12 @@ const sf::Texture& TextureManager::projectile ( ProjectileType type )
     }
 }
 
-const sf::Texture& TextureManager::target()
+const platform::Texture& TextureManager::target()
 {
     return get ( "target" );
 }
 
-const sf::Texture& TextureManager::slingshot_wood()
+const platform::Texture& TextureManager::slingshot_wood()
 {
     return get ( "slingshot_wood" );
 }

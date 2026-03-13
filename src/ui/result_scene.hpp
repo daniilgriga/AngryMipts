@@ -21,29 +21,29 @@ struct LevelResult
 class ResultScene : public Scene
 {
 private:
-    sf::Font font_;
-    sf::Text title_;
-    sf::Text score_text_;
-    sf::Text status_note_;
-    sf::Text prompt_;
-    sf::Text lb_title_;
-    sf::Text lb_empty_;
+    platform::Font font_;
+    platform::Text title_;
+    platform::Text score_text_;
+    platform::Text status_note_;
+    platform::Text prompt_;
+    platform::Text lb_title_;
+    platform::Text lb_empty_;
 
-    LevelResult result_;
-    sf::Clock   star_clock_;
-    float       lb_scroll_ = 0.f;   // pixels scrolled in leaderboard panel
+    LevelResult     result_;
+    platform::Clock star_clock_;
+    float           lb_scroll_ = 0.f;   // pixels scrolled in leaderboard panel
 
-    sf::FloatRect rect_btn_retry_;
-    sf::FloatRect rect_btn_menu_;
+    platform::FloatRect rect_btn_retry_;
+    platform::FloatRect rect_btn_menu_;
 
 public:
-    explicit ResultScene ( const sf::Font& font );
+    explicit ResultScene ( const platform::Font& font );
 
     void set_result ( const LevelResult& result );
 
-    SceneId handle_input ( const sf::Event& event ) override;
+    SceneId handle_input ( const platform::Event& event ) override;
     void update() override;
-    void render ( sf::RenderWindow& window ) override;
+    void render ( platform::Window& window ) override;
 };
 
 }  // namespace angry

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <SFML/Graphics/View.hpp>
+#include "platform/platform.hpp"
 
 namespace angry
 {
 
 // Applies a centered letterbox viewport for the configured gameplay aspect ratio.
-void apply_letterbox_view ( sf::View& view, sf::Vector2u window_size );
+void apply_letterbox_view ( platform::View& view, platform::Vec2u window_size );
 
 }  // namespace angry

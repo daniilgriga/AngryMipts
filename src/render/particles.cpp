@@ -1,5 +1,9 @@
 #include "render/particles.hpp"
 
+#ifndef __EMSCRIPTEN__
+#include <SFML/Graphics.hpp>
+#endif
+
 #include <algorithm>
 #include <cstddef>
 #include <cmath>
@@ -21,7 +25,7 @@ float rand_float ( float lo, float hi )
 
 }  // namespace
 
-void ParticleSystem::emit ( sf::Vector2f pos, int count, sf::Color color,
+void ParticleSystem::emit ( platform::Vec2f pos, int count, platform::Color color,
                             float speed, float lifetime, float size )
 {
     if ( particles_.capacity() < kParticleHardCap )
@@ -52,7 +56,7 @@ void ParticleSystem::emit ( sf::Vector2f pos, int count, sf::Color color,
     emitted_this_frame_ += count;
 }
 
-void ParticleSystem::emit_ring ( sf::Vector2f pos, int count, sf::Color color,
+void ParticleSystem::emit_ring ( platform::Vec2f pos, int count, platform::Color color,
                                  float speed, float lifetime, float size )
 {
     if ( particles_.capacity() < kParticleHardCap )
@@ -82,7 +86,7 @@ void ParticleSystem::emit_ring ( sf::Vector2f pos, int count, sf::Color color,
     emitted_this_frame_ += count;
 }
 
-void ParticleSystem::emit_shards ( sf::Vector2f pos, int count, sf::Color color,
+void ParticleSystem::emit_shards ( platform::Vec2f pos, int count, platform::Color color,
                                    float speed, float lifetime, float size,
                                    float angular_speed )
 {
@@ -139,7 +143,7 @@ void ParticleSystem::update ( float dt )
         particles_.end() );
 }
 
-void ParticleSystem::render ( sf::RenderTarget& target )
+void ParticleSystem::render ( platform::RenderTarget& target )
 {
     const std::size_t draw_stride = particles_.size() > 1100 ? 2u : 1u;
     for ( std::size_t i = 0; i < particles_.size(); i += draw_stride )
@@ -149,30 +153,43 @@ void ParticleSystem::render ( sf::RenderTarget& target )
         float cur_size = p.size * alpha;
         const float base_alpha = static_cast<float> ( p.color.a ) / 255.f;
 
-        sf::Color c = p.color;
+        platform::Color c = p.color;
 
         if ( p.shape == ParticleShape::Shard )
         {
-            // Keep shards readable longer than dust/sparks so material breakage is visible.
             cur_size = p.size * ( 0.72f + 0.28f * alpha );
             c.a = static_cast<uint8_t> (
                 255.f * base_alpha * ( 0.25f + 0.75f * alpha ) );
 
+#ifndef __EMSCRIPTEN__
             sf::RectangleShape shard ( {cur_size * 1.6f, cur_size * 0.8f} );
             shard.setOrigin ( {cur_size * 0.8f, cur_size * 0.4f} );
             shard.setPosition ( p.position );
             shard.setRotation ( sf::degrees ( p.rotationDeg ) );
             shard.setFillColor ( c );
             target.draw ( shard );
+#else
+            ::Rectangle rec { p.position.x - cur_size * 0.8f,
+                               p.position.y - cur_size * 0.4f,
+                               cur_size * 1.6f, cur_size * 0.8f };
+            ::DrawRectanglePro( rec,
+                                { cur_size * 0.8f, cur_size * 0.4f },
+                                p.rotationDeg,
+                                c.to_rl() );
+#endif
         }
         else
         {
             c.a = static_cast<uint8_t> ( 255.f * base_alpha * alpha * alpha );
+#ifndef __EMSCRIPTEN__
             sf::CircleShape dot ( cur_size );
             dot.setOrigin ( {cur_size, cur_size} );
             dot.setPosition ( p.position );
             dot.setFillColor ( c );
             target.draw ( dot );
+#else
+            ::DrawCircleV( { p.position.x, p.position.y }, cur_size, c.to_rl() );
+#endif
         }
     }
 }

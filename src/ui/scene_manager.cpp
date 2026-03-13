@@ -18,7 +18,7 @@ void SceneManager::switch_to ( SceneId id )
     current_id_ = id;
 }
 
-void SceneManager::handle_input ( const sf::Event& event )
+void SceneManager::handle_input ( const platform::Event& event )
 {
     if ( current_id_ == SceneId::None )
         return;
@@ -96,7 +96,7 @@ void SceneManager::update()
     }
 }
 
-void SceneManager::render ( sf::RenderWindow& window )
+void SceneManager::render ( platform::Window& window )
 {
     if ( current_id_ == SceneId::None )
         return;

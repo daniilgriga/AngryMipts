@@ -10,11 +10,11 @@ namespace angry
 class LoginScene : public Scene
 {
 public:
-    explicit LoginScene ( const sf::Font& font, AccountService& accounts );
+    explicit LoginScene ( const platform::Font& font, AccountService& accounts );
 
-    SceneId handle_input ( const sf::Event& event ) override;
+    SceneId handle_input ( const platform::Event& event ) override;
     void    update() override;
-    void    render ( sf::RenderWindow& window ) override;
+    void    render ( platform::Window& window ) override;
 
 private:
     enum class FocusField { Username, Password };
@@ -25,7 +25,7 @@ private:
 
     AccountService& accounts_;
 
-    sf::Font font_;
+    platform::Font font_;
 
     std::string username_buf_;
     std::string password_buf_;
@@ -33,16 +33,16 @@ private:
 
     std::string  status_msg_;
     StatusKind   status_kind_ = StatusKind::None;
-    sf::Clock    status_clock_;   // time since last status set
-    sf::Clock    caret_clock_;    // drives blinking caret
-    sf::Clock    anim_clock_;     // background animation
+    platform::Clock status_clock_;   // time since last status set
+    platform::Clock caret_clock_;    // drives blinking caret
+    platform::Clock anim_clock_;     // background animation
 
     // Hit-test rects updated each render() call
-    sf::FloatRect rect_field_username_;
-    sf::FloatRect rect_field_password_;
-    sf::FloatRect rect_btn_login_;
-    sf::FloatRect rect_btn_register_;
-    sf::FloatRect rect_btn_guest_;
+    platform::FloatRect rect_field_username_;
+    platform::FloatRect rect_field_password_;
+    platform::FloatRect rect_btn_login_;
+    platform::FloatRect rect_btn_register_;
+    platform::FloatRect rect_btn_guest_;
 };
 
 }  // namespace angry

@@ -1,0 +1,54 @@
+name: Web Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: web-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and Deploy (GitHub Pages)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.69
+
+      - name: Build web target
+        run: bash build_web.sh
+
+      - name: Prepare Pages artifact
+        run: |
+          rm -rf pages-dist
+          mkdir -p pages-dist
+          cp build_web/AngryMipts.html pages-dist/index.html
+          cp build_web/AngryMipts.js pages-dist/
+          cp build_web/AngryMipts.wasm pages-dist/
+          cp build_web/AngryMipts.data pages-dist/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

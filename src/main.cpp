@@ -1,4 +1,5 @@
 #include "data/account_service.hpp"
+#include "platform/platform.hpp"
 #include "ui/game_scene.hpp"
 #include "ui/level_select_scene.hpp"
 #include "ui/login_scene.hpp"
@@ -6,7 +7,11 @@
 #include "ui/result_scene.hpp"
 #include "ui/scene_manager.hpp"
 
+#ifndef __EMSCRIPTEN__
 #include <SFML/Graphics.hpp>
+#else
+#include <emscripten.h>
+#endif
 
 #include <filesystem>
 #include <iostream>
@@ -14,6 +19,8 @@
 
 namespace
 {
+
+#ifndef __EMSCRIPTEN__
 
 enum class FrameLimitMode
 {
@@ -64,6 +71,8 @@ const char* frameLimitLabel( FrameLimitMode mode )
     }
 }
 
+#endif  // !__EMSCRIPTEN__
+
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
 {
     if ( std::filesystem::exists( relativePath ) )
@@ -84,6 +93,83 @@ std::string resolveProjectPath( const std::filesystem::path& relativePath )
 }
 
 }  // namespace
+
+// ─── Web (Emscripten) main loop ─────────────────────────────────────────────
+#ifdef __EMSCRIPTEN__
+
+struct WebApp
+{
+    platform::Window        window;
+    platform::Font          font;
+    angry::AccountService   accounts { "" };
+    angry::SceneManager     scenes;
+};
+
+static WebApp* g_app = nullptr;
+
+static void web_frame()
+{
+    auto& app = *g_app;
+
+    // Poll events
+    for ( auto& ev : app.window.pollEvents() )
+    {
+        // Check for close
+        if ( std::holds_alternative<platform::ClosedEvent>( ev ) )
+        {
+            app.window.close();
+            return;
+        }
+        app.scenes.handle_input( ev );
+    }
+
+    app.scenes.update();
+
+    app.window.clear( platform::Color( 135, 206, 235 ) );
+    app.scenes.render( app.window );
+    app.window.display();
+}
+
+int main()
+{
+    g_app = new WebApp();
+    auto& app = *g_app;
+
+    const std::string fontPath = "/assets/fonts/liberation_sans.ttf";
+    const std::string levelsPath = "/levels";
+    const std::string scoresPath;   // disabled on web (no persistent local file storage yet)
+
+    app.window.create( 1280, 720, "AngryMipts" );
+    app.window.setFramerateLimit( 60 );
+
+    if ( !app.font.openFromFile( fontPath ) )
+    {
+        std::cerr << "Failed to load font" << std::endl;
+        return 1;
+    }
+
+    app.accounts.loadSession();
+
+    auto level_select = std::make_unique<angry::LevelSelectScene>( app.font, &app.accounts );
+    level_select->load_data( levelsPath, scoresPath );
+
+    app.scenes.add_scene( angry::SceneId::Login,
+                          std::make_unique<angry::LoginScene>( app.font, app.accounts ) );
+    app.scenes.add_scene( angry::SceneId::Menu,
+                          std::make_unique<angry::MenuScene>( app.font, app.accounts ) );
+    app.scenes.add_scene( angry::SceneId::LevelSelect, std::move( level_select ) );
+    app.scenes.add_scene( angry::SceneId::Game,
+                          std::make_unique<angry::GameScene>( app.font, &app.accounts ) );
+    app.scenes.add_scene( angry::SceneId::Result,
+                          std::make_unique<angry::ResultScene>( app.font ) );
+    app.scenes.switch_to( angry::SceneId::Login );
+
+    emscripten_set_main_loop( web_frame, 0, 1 );
+
+    return 0;
+}
+
+#else  // ─── Native (SFML) main loop ─────────────────────────────────────────
 
 int main()
 {
@@ -214,3 +300,5 @@ int main()
 
     return 0;
 }
+
+#endif  // __EMSCRIPTEN__

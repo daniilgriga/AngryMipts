@@ -2,16 +2,18 @@
 
 #include "shared/types.hpp"
 
+#ifndef __EMSCRIPTEN__
 #include <SFML/Audio.hpp>
-
 #include <random>
 #include <vector>
+#endif
 
 namespace angry
 {
 
 class SfxPlayer
 {
+#ifndef __EMSCRIPTEN__
 private:
     sf::SoundBuffer dasher_ability_;
     sf::SoundBuffer splitter_ability_;
@@ -33,6 +35,7 @@ private:
                                         float gain, float decay_power );
     void play ( const sf::SoundBuffer& buffer, float volume,
                 float base_pitch = 1.f );
+#endif
 
 public:
     SfxPlayer();

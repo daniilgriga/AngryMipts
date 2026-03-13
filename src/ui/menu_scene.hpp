@@ -8,22 +8,22 @@ namespace angry
 class MenuScene : public Scene
 {
 private:
-    AccountService& accounts_;
-    sf::Font        font_;
-    sf::Text        title_;
-    sf::Text        prompt_;
-    sf::Text        badge_text_;
-    sf::Text        badge_btn_;
+    AccountService&    accounts_;
+    platform::Font     font_;
+    platform::Text     title_;
+    platform::Text     prompt_;
+    platform::Text     badge_text_;
+    platform::Text     badge_btn_;
 
-    sf::FloatRect   rect_prompt_;
-    sf::FloatRect   rect_badge_btn_;
+    platform::FloatRect rect_prompt_;
+    platform::FloatRect rect_badge_btn_;
 
 public:
-    MenuScene ( const sf::Font& font, AccountService& accounts );
+    MenuScene ( const platform::Font& font, AccountService& accounts );
 
-    SceneId handle_input ( const sf::Event& event ) override;
+    SceneId handle_input ( const platform::Event& event ) override;
     void update() override;
-    void render ( sf::RenderWindow& window ) override;
+    void render ( platform::Window& window ) override;
 };
 
 }  // namespace angry

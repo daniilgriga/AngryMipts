@@ -26,9 +26,9 @@ public:
         return dynamic_cast<T*> ( it->second.get() );
     }
 
-    void handle_input ( const sf::Event& event );
+    void handle_input ( const platform::Event& event );
     void update();
-    void render ( sf::RenderWindow& window );
+    void render ( platform::Window& window );
 };
 
 }  // namespace angry

@@ -16,27 +16,27 @@ namespace angry
 class LevelSelectScene : public Scene
 {
 private:
-    AccountService* accounts_ = nullptr;
-    sf::Font font_;
-    sf::Text title_;
-    sf::Text prompt_;
-    sf::Text badge_text_;
-    sf::Text badge_btn_;
+    AccountService*    accounts_ = nullptr;
+    platform::Font     font_;
+    platform::Text     title_;
+    platform::Text     prompt_;
+    platform::Text     badge_text_;
+    platform::Text     badge_btn_;
 
-    std::vector<LevelMeta>  levels_;
-    std::vector<LevelScore> scores_;
-    std::vector<sf::Text>   level_texts_;
-    std::string             scores_path_;
+    std::vector<LevelMeta>         levels_;
+    std::vector<LevelScore>        scores_;
+    std::vector<platform::Text>    level_texts_;
+    std::string                    scores_path_;
 
     int   selected_          = 0;
     int   selected_level_id_ = -1;
     float scroll_offset_     = 0.f;
 
     // Hit-test rects updated each render() call
-    sf::FloatRect              rect_badge_;
-    sf::FloatRect              rect_right_panel_;
-    sf::FloatRect              rect_left_panel_;
-    std::vector<sf::FloatRect> rects_level_items_screen_; // actual screen Y per item
+    platform::FloatRect              rect_badge_;
+    platform::FloatRect              rect_right_panel_;
+    platform::FloatRect              rect_left_panel_;
+    std::vector<platform::FloatRect> rects_level_items_screen_; // actual screen Y per item
 
     // Preview panel leaderboard — async fetch per selection
     struct PreviewState
@@ -55,7 +55,7 @@ private:
     void fetch_preview ( int level_id );
 
 public:
-    explicit LevelSelectScene ( const sf::Font& font, AccountService* accounts = nullptr );
+    explicit LevelSelectScene ( const platform::Font& font, AccountService* accounts = nullptr );
 
     void load_data ( const std::string& levels_dir, const std::string& scores_path );
     void reload_scores();
@@ -63,9 +63,9 @@ public:
     int get_selected_level_id() const { return selected_level_id_; }
     const std::string& get_scores_path() const { return scores_path_; }
 
-    SceneId handle_input ( const sf::Event& event ) override;
+    SceneId handle_input ( const platform::Event& event ) override;
     void update() override;
-    void render ( sf::RenderWindow& window ) override;
+    void render ( platform::Window& window ) override;
 };
 
 }  // namespace angry

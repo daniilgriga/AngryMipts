@@ -1,8 +1,8 @@
 #include "data/auth_client.hpp"
 
 #include "data/logger.hpp"
+#include "platform/http.hpp"
 
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 
 #include <cstdlib>
@@ -35,23 +35,23 @@ std::string resolveBackendUrl( std::string baseUrl )
     return std::string( kDefaultBackendUrl );
 }
 
-std::string extractErrorMessage( const cpr::Response& response, const char* fallback )
+std::string extractErrorMessage( const platform::http::Response& response, const char* fallback )
 {
-    if ( response.error.code != cpr::ErrorCode::OK )
+    if ( response.network_error )
     {
-        if ( !response.error.message.empty() )
+        if ( !response.error_message.empty() )
         {
-            return response.error.message;
+            return response.error_message;
         }
         return "server unavailable";
     }
 
-    if ( response.text.empty() )
+    if ( response.body.empty() )
     {
         return std::string( fallback );
     }
 
-    const Json root = Json::parse( response.text, nullptr, false );
+    const Json root = Json::parse( response.body, nullptr, false );
     if ( root.is_object() )
     {
         if ( root.contains( "error" ) && root["error"].is_string() )
@@ -79,15 +79,17 @@ AuthResult postAuthRequest(
         {"password", password},
     };
 
-    const cpr::Response response = cpr::Post(
-        cpr::Url{baseUrl + endpoint},
-        cpr::Header{{"Content-Type", "application/json"}},
-        cpr::Body{body.dump()},
-        cpr::Timeout{kAuthTimeoutMs});
+    const platform::http::Response response = platform::http::post(
+        baseUrl + endpoint,
+        body.dump(),
+        platform::http::Headers {
+            {"Content-Type", "application/json"},
+        },
+        kAuthTimeoutMs );
 
     AuthResult result;
 
-    if ( response.error.code != cpr::ErrorCode::OK )
+    if ( response.network_error )
     {
         result.errorMessage = extractErrorMessage( response, "server unavailable" );
         return result;
@@ -139,15 +141,17 @@ AuthResult AuthClient::loginUser(
         {"password", password},
     };
 
-    const cpr::Response response = cpr::Post(
-        cpr::Url{baseUrl_ + "/login"},
-        cpr::Header{{"Content-Type", "application/json"}},
-        cpr::Body{body.dump()},
-        cpr::Timeout{kAuthTimeoutMs});
+    const platform::http::Response response = platform::http::post(
+        baseUrl_ + "/login",
+        body.dump(),
+        platform::http::Headers {
+            {"Content-Type", "application/json"},
+        },
+        kAuthTimeoutMs );
 
     AuthResult result;
 
-    if ( response.error.code != cpr::ErrorCode::OK )
+    if ( response.network_error )
     {
         result.errorMessage = extractErrorMessage( response, "server unavailable" );
         Logger::error( "Login failed: {}", result.errorMessage );
@@ -161,7 +165,7 @@ AuthResult AuthClient::loginUser(
         return result;
     }
 
-    const Json root = Json::parse( response.text, nullptr, false );
+    const Json root = Json::parse( response.body, nullptr, false );
     if ( !root.is_object() )
     {
         result.errorMessage = "invalid login response";

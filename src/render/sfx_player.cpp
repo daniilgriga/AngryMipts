@@ -1,5 +1,6 @@
 #include "render/sfx_player.hpp"
 
+#ifndef __EMSCRIPTEN__
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -142,3 +143,16 @@ void SfxPlayer::play_destroyed ( Material material )
 }
 
 }  // namespace angry
+
+#else  // __EMSCRIPTEN__ — audio is a no-op on web
+
+namespace angry
+{
+
+SfxPlayer::SfxPlayer() {}
+void SfxPlayer::play_ability ( ProjectileType ) {}
+void SfxPlayer::play_destroyed ( Material ) {}
+
+}  // namespace angry
+
+#endif

@@ -1,7 +1,6 @@
 #pragma once
+#include "platform/platform.hpp"
 #include "shared/types.hpp"
-
-#include <SFML/Graphics.hpp>
 
 #include <vector>
 
@@ -16,9 +15,9 @@ enum class ParticleShape : uint8_t
 
 struct Particle
 {
-    sf::Vector2f position;
-    sf::Vector2f velocity;
-    sf::Color color;
+    platform::Vec2f position;
+    platform::Vec2f velocity;
+    platform::Color color;
     float lifetime;
     float age = 0.f;
     float size;
@@ -36,14 +35,14 @@ private:
     int emitted_this_frame_ = 0;
 
 public:
-    void emit ( sf::Vector2f pos, int count, sf::Color color, float speed,
+    void emit ( platform::Vec2f pos, int count, platform::Color color, float speed,
                 float lifetime, float size );
-    void emit_ring ( sf::Vector2f pos, int count, sf::Color color, float speed,
+    void emit_ring ( platform::Vec2f pos, int count, platform::Color color, float speed,
                      float lifetime, float size );
-    void emit_shards ( sf::Vector2f pos, int count, sf::Color color, float speed,
+    void emit_shards ( platform::Vec2f pos, int count, platform::Color color, float speed,
                        float lifetime, float size, float angular_speed );
     void update ( float dt );
-    void render ( sf::RenderTarget& target );
+    void render ( platform::RenderTarget& target );
     std::size_t size() const { return particles_.size(); }
     bool empty() const { return particles_.empty(); }
 };
