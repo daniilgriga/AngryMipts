@@ -1570,24 +1570,47 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     }
     else if (isTriangle)
     {
-        const float halfWidthM = (block.sizePx.x * 0.5f) / PIXELS_PER_METER;
-        const float halfHeightM = (block.sizePx.y * 0.5f) / PIXELS_PER_METER;
-        const b2Vec2 vertices[3] = {
-            b2Vec2{-halfWidthM, halfHeightM},
-            b2Vec2{halfWidthM, halfHeightM},
-            b2Vec2{0.0f, -halfHeightM},
-        };
+        bool createdFromVertices = false;
+        if (block.triangleLocalVerticesPx.size() == 3)
+        {
+            b2Vec2 vertices[3] = {};
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                vertices[i] = b2Vec2{
+                    block.triangleLocalVerticesPx[i].x / PIXELS_PER_METER,
+                    block.triangleLocalVerticesPx[i].y / PIXELS_PER_METER};
+            }
 
-        const b2Hull hull = b2ComputeHull(vertices, 3);
-        if (hull.count == 3 && b2ValidateHull(&hull))
-        {
-            const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
-            b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+            const b2Hull hull = b2ComputeHull(vertices, 3);
+            if (hull.count == 3 && b2ValidateHull(&hull))
+            {
+                const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
+                b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+                createdFromVertices = true;
+            }
         }
-        else
+
+        if (!createdFromVertices)
         {
-            const b2Polygon fallbackBox = b2MakeBox(halfWidthM, halfHeightM);
-            b2CreatePolygonShape(bodyId, &shapeDef, &fallbackBox);
+            const float halfWidthM = (block.sizePx.x * 0.5f) / PIXELS_PER_METER;
+            const float halfHeightM = (block.sizePx.y * 0.5f) / PIXELS_PER_METER;
+            const b2Vec2 vertices[3] = {
+                b2Vec2{-halfWidthM, halfHeightM},
+                b2Vec2{halfWidthM, halfHeightM},
+                b2Vec2{0.0f, -halfHeightM},
+            };
+
+            const b2Hull hull = b2ComputeHull(vertices, 3);
+            if (hull.count == 3 && b2ValidateHull(&hull))
+            {
+                const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
+                b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+            }
+            else
+            {
+                const b2Polygon fallbackBox = b2MakeBox(halfWidthM, halfHeightM);
+                b2CreatePolygonShape(bodyId, &shapeDef, &fallbackBox);
+            }
         }
     }
     else
