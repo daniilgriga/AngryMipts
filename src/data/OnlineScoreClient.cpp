@@ -17,8 +17,13 @@ namespace
 {
 
 constexpr int kBackendTimeoutMs = 3000;
+#ifdef __EMSCRIPTEN__
+constexpr int kBackendMaxAttempts = 1;
+constexpr int kBackendRetryDelayMs = 0;
+#else
 constexpr int kBackendMaxAttempts = 3;
 constexpr int kBackendRetryDelayMs = 220;
+#endif
 constexpr const char* kDefaultBackendUrl = "http://84.201.138.107:8080";
 constexpr const char* kBackendUrlEnvVar = "ANGRY_BACKEND_URL";
 
@@ -92,7 +97,10 @@ platform::http::Response performRequestWithRetry( const char* opName, RequestFn&
             return response;
         }
 
-        std::this_thread::sleep_for( std::chrono::milliseconds( kBackendRetryDelayMs ) );
+        if constexpr ( kBackendRetryDelayMs > 0 )
+        {
+            std::this_thread::sleep_for( std::chrono::milliseconds( kBackendRetryDelayMs ) );
+        }
     }
 
     return response;

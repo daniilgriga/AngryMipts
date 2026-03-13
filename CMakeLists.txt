@@ -144,9 +144,11 @@ if(EMSCRIPTEN)
     )
     set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
     set(LEVELS_DIR "${CMAKE_SOURCE_DIR}/levels")
+    set(WEB_SHELL_FILE "${CMAKE_SOURCE_DIR}/web/shell.html")
     target_link_options(${PROJECT_NAME} PRIVATE
         -sUSE_GLFW=3
         -sFETCH=1
+        -sASYNCIFY=1
         -sALLOW_MEMORY_GROWTH=1
         -sMAX_WEBGL_VERSION=2
         -sEXPORTED_RUNTIME_METHODS=cwrap
@@ -155,6 +157,11 @@ if(EMSCRIPTEN)
         "SHELL:--preload-file ${LEVELS_DIR}@/levels"
         -sASSERTIONS=1
     )
+    if(EXISTS "${WEB_SHELL_FILE}")
+        target_link_options(${PROJECT_NAME} PRIVATE
+            "SHELL:--shell-file ${WEB_SHELL_FILE}"
+        )
+    endif()
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
