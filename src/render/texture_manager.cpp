@@ -1,3 +1,14 @@
+// ============================================================
+// texture_manager.cpp — Texture generation/cache implementation.
+// Part of: angry::render
+//
+// Implements texture provisioning for gameplay rendering:
+//   * Resolves asset paths across local/build/source layouts
+//   * Generates procedural fallback textures when needed
+//   * Caches textures by key for repeated frame access
+//   * Exposes typed getters for blocks/projectiles/targets
+// ============================================================
+
 #include "render/texture_manager.hpp"
 #include "data/logger.hpp"
 

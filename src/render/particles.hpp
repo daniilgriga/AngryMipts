@@ -1,3 +1,14 @@
+// ============================================================
+// particles.hpp — Runtime particle simulation declarations.
+// Part of: angry::render
+//
+// Declares lightweight particle rendering primitives:
+//   * Particle shape and per-particle runtime state
+//   * Emitter API for bursts, rings, and directional sprays
+//   * Frame update and draw entry points
+//   * Internal cap/budget enforcement for stable performance
+// ============================================================
+
 #pragma once
 #include "platform/platform.hpp"
 #include "shared/types.hpp"
@@ -28,6 +39,8 @@ struct Particle
     float drag = 0.f;
 };
 
+// Manages short-lived visual particles with capped emission and
+// deterministic per-frame update/draw integration.
 class ParticleSystem
 {
 private:

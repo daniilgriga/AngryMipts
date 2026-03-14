@@ -1,3 +1,14 @@
+// ============================================================
+// sfx_player.hpp — Procedural gameplay SFX interface.
+// Part of: angry::render
+//
+// Declares sound-effect playback for gameplay events:
+//   * Ability activation audio by projectile type
+//   * Material-specific destruction sound playback
+//   * Procedural chirp synthesis helpers (native builds)
+//   * No-op compatible API for web/non-audio builds
+// ============================================================
+
 #pragma once
 
 #include "shared/types.hpp"
@@ -11,6 +22,8 @@
 namespace angry
 {
 
+// Encapsulates short procedural SFX generation and playback for
+// ability/destroy events without external asset dependency.
 class SfxPlayer
 {
 #ifndef __EMSCRIPTEN__

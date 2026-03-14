@@ -1,3 +1,14 @@
+// ============================================================
+// particles.cpp — Particle simulation and draw implementation.
+// Part of: angry::render
+//
+// Implements CPU-side particle effects used by gameplay VFX:
+//   * Emission helpers for burst/ring/spray patterns
+//   * Per-frame aging, drag, gravity, and lifetime culling
+//   * Draw paths for circle and shard particles
+//   * Hard-cap and per-frame budget controls for stability
+// ============================================================
+
 #include "render/particles.hpp"
 
 #ifndef __EMSCRIPTEN__

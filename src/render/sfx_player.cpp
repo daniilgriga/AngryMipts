@@ -1,3 +1,14 @@
+// ============================================================
+// sfx_player.cpp — Procedural SFX generation and playback.
+// Part of: angry::render
+//
+// Implements runtime sound effects for gameplay feedback:
+//   * Synthesizes chirp-like waveforms for event categories
+//   * Plays ability-specific and material-specific SFX
+//   * Maintains active sound list and playback lifetime
+//   * Compiles out on web builds without native audio backend
+// ============================================================
+
 #include "render/sfx_player.hpp"
 
 #ifndef __EMSCRIPTEN__
