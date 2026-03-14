@@ -11,7 +11,7 @@
 
 #pragma once
 #include "data/account_service.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 #include "scene.hpp"
 
 #include <vector>

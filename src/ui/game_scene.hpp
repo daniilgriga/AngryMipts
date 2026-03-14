@@ -12,7 +12,7 @@
 #pragma once
 #include "data/account_service.hpp"
 #include "data/level_loader.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 #include "data/score_saver.hpp"
 #include "physics/physics_runtime.hpp"
 #include "render/particles.hpp"

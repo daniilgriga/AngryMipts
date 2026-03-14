@@ -51,8 +51,8 @@ LevelData make_level(
     std::vector<ProjectileType> projectiles,
     std::vector<BlockData> blocks,
     std::vector<TargetData> targets,
-    int star2Threshold,
-    int star3Threshold )
+    int star_2_threshold,
+    int star_3_threshold )
 {
     LevelData level;
     level.meta = LevelMeta{
@@ -60,8 +60,8 @@ LevelData make_level(
         "physics_test_" + std::to_string( id ),
         static_cast<int>( projectiles.size() ),
         0,
-        star2Threshold,
-        star3Threshold,
+        star_2_threshold,
+        star_3_threshold,
     };
     level.slingshot = angry::SlingshotData{
         Vec2{300.0f, 500.0f},

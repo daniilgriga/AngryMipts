@@ -36,6 +36,8 @@ float rand_float ( float lo, float hi )
 
 }  // namespace
 
+// #=# Emitters #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 void ParticleSystem::emit ( platform::Vec2f pos, int count, platform::Color color,
                             float speed, float lifetime, float size )
 {
@@ -132,6 +134,8 @@ void ParticleSystem::emit_shards ( platform::Vec2f pos, int count, platform::Col
 
     emitted_this_frame_ += count;
 }
+
+// #=# Update & Render #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void ParticleSystem::update ( float dt )
 {

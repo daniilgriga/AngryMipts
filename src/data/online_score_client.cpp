@@ -1,5 +1,5 @@
 // ============================================================
-// OnlineScoreClient.cpp — Online score client implementation.
+// online_score_client.cpp — Online score client implementation.
 // Part of: angry::data
 //
 // Implements network interactions with leaderboard backend:
@@ -9,7 +9,7 @@
 //   * Fetches/parses leaderboard data with status mapping
 // ============================================================
 
-#include "OnlineScoreClient.hpp"
+#include "online_score_client.hpp"
 
 #include "logger.hpp"
 #include "platform/http.hpp"

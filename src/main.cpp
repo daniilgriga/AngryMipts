@@ -105,7 +105,7 @@ std::string resolve_project_path( const std::filesystem::path& relative_path )
 
 }  // namespace
 
-// ─── Web (Emscripten) main loop ─────────────────────────────────────────────
+// #=# Web (Emscripten) Main Loop #=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #ifdef __EMSCRIPTEN__
 
 struct WebApp
@@ -180,7 +180,7 @@ int main()
     return 0;
 }
 
-#else  // ─── Native (SFML) main loop ─────────────────────────────────────────
+#else  // #=# Native (SFML) Main Loop #=#=#=#=#=#=#=#=#=#=#=#=#
 
 int main()
 {

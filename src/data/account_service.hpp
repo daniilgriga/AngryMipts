@@ -13,7 +13,7 @@
 
 #include "data/auth_client.hpp"
 #include "data/session_manager.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 
 #include <string>
 #include <vector>

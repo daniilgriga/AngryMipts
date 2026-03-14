@@ -63,9 +63,9 @@ struct LevelMeta
     int id;
     std::string name;
     int totalShots;
-    int star1Threshold;
-    int star2Threshold;
-    int star3Threshold;
+    int star_1_threshold;
+    int star_2_threshold;
+    int star_3_threshold;
 };
 
 struct LevelData

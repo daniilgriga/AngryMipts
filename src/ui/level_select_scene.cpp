@@ -49,6 +49,8 @@ void draw_vertical_gradient ( platform::Color top, platform::Color bottom, int W
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 LevelSelectScene::LevelSelectScene ( const platform::Font& font, AccountService* accounts )
     : accounts_ ( accounts )
     , font_ ( font )
@@ -69,6 +71,8 @@ LevelSelectScene::LevelSelectScene ( const platform::Font& font, AccountService*
     badge_btn_.font_  = &font_;
 #endif
 }
+
+// #=# Data Loading #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void LevelSelectScene::fetch_preview ( int level_id )
 {
@@ -219,6 +223,8 @@ void LevelSelectScene::rebuild_texts()
     }
 }
 
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 SceneId LevelSelectScene::handle_input ( const platform::Event& event )
 {
 #ifndef __EMSCRIPTEN__
@@ -354,6 +360,8 @@ SceneId LevelSelectScene::handle_input ( const platform::Event& event )
 void LevelSelectScene::update()
 {
 }
+
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void LevelSelectScene::render ( platform::Window& window )
 {

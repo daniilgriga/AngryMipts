@@ -56,6 +56,8 @@ float bounce_in ( float t )
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 ResultScene::ResultScene ( const platform::Font& font )
     : font_ ( font )
 #ifndef __EMSCRIPTEN__
@@ -83,6 +85,8 @@ ResultScene::ResultScene ( const platform::Font& font )
     lb_empty_.font_ = &font_;  lb_empty_.char_size_ = 18;
 #endif
 }
+
+// #=# State Setup #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void ResultScene::set_result ( const LevelResult& result )
 {
@@ -150,6 +154,8 @@ void ResultScene::set_result ( const LevelResult& result )
 #endif
 }
 
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 SceneId ResultScene::handle_input ( const platform::Event& event )
 {
 #ifndef __EMSCRIPTEN__
@@ -203,6 +209,8 @@ SceneId ResultScene::handle_input ( const platform::Event& event )
 void ResultScene::update()
 {
 }
+
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void ResultScene::render ( platform::Window& window )
 {

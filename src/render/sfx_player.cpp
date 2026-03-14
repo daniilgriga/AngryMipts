@@ -26,6 +26,8 @@ constexpr unsigned kSampleRate = 44100;
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 SfxPlayer::SfxPlayer()
 {
     dasher_ability_ = make_chirp ( 0.18f, 230.f, 95.f, 0.18f, 0.85f, 1.85f );
@@ -39,6 +41,8 @@ SfxPlayer::SfxPlayer()
     glass_destroy_ = make_chirp ( 0.12f, 780.f, 420.f, 0.24f, 0.80f, 1.5f );
     ice_destroy_ = make_chirp ( 0.11f, 640.f, 340.f, 0.22f, 0.72f, 1.45f );
 }
+
+// #=# Sound Synthesis #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 sf::SoundBuffer SfxPlayer::make_chirp ( float duration_seconds, float freq_start_hz,
                                         float freq_end_hz, float noise_mix,
@@ -97,6 +101,8 @@ void SfxPlayer::play ( const sf::SoundBuffer& buffer, float volume, float base_p
     sound.setPitch ( base_pitch + pitch_jitter_ ( rng_ ) );
     sound.play();
 }
+
+// #=# Playback #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void SfxPlayer::play_ability ( ProjectileType projectile_type )
 {

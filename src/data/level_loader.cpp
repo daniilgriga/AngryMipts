@@ -314,12 +314,12 @@ LevelMeta parseMeta( const Json& value )
         throw std::runtime_error( "meta.starThresholds: expected exactly 3 values" );
     }
 
-    meta.star1Threshold = requireInt( thresholds.at( 0 ), "meta.starThresholds[0]" );
-    meta.star2Threshold = requireInt( thresholds.at( 1 ), "meta.starThresholds[1]" );
-    meta.star3Threshold = requireInt( thresholds.at( 2 ), "meta.starThresholds[2]" );
+    meta.star_1_threshold = requireInt( thresholds.at( 0 ), "meta.starThresholds[0]" );
+    meta.star_2_threshold = requireInt( thresholds.at( 1 ), "meta.starThresholds[1]" );
+    meta.star_3_threshold = requireInt( thresholds.at( 2 ), "meta.starThresholds[2]" );
 
-    if ( !( meta.star1Threshold < meta.star2Threshold &&
-            meta.star2Threshold < meta.star3Threshold ) )
+    if ( !( meta.star_1_threshold < meta.star_2_threshold &&
+            meta.star_2_threshold < meta.star_3_threshold ) )
     {
         throw std::runtime_error( "meta.starThresholds: values must be strictly increasing" );
     }

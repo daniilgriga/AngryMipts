@@ -9,7 +9,7 @@
 //   * Token/non-token request path expectations
 // ============================================================
 
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 
 #include <gtest/gtest.h>
 

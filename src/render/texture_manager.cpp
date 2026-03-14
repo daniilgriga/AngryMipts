@@ -108,6 +108,8 @@ void draw_base_rect ( platform::RenderTexture& canvas, platform::Color color )
 
 }  // namespace
 
+// #=# Texture Generation #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 #ifndef __EMSCRIPTEN__
 
 void TextureManager::generate_all()
@@ -677,6 +679,7 @@ void TextureManager::generate_all()
 
 #endif  // __EMSCRIPTEN__
 
+// #=# Public Getters #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 const platform::Texture& TextureManager::get ( const std::string& key )
 {

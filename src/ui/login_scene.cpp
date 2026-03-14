@@ -92,11 +92,15 @@ platform::Color status_color ( int kind )
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 LoginScene::LoginScene ( const platform::Font& font, AccountService& accounts )
     : accounts_ ( accounts )
     , font_ ( font )
 {
 }
+
+// #=# Authentication Logic #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void LoginScene::do_login()
 {
@@ -152,6 +156,8 @@ void LoginScene::do_register()
     }
     status_clock_.restart();
 }
+
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 SceneId LoginScene::handle_input ( const platform::Event& event )
 {
@@ -312,6 +318,8 @@ SceneId LoginScene::handle_input ( const platform::Event& event )
 void LoginScene::update()
 {
 }
+
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void LoginScene::render ( platform::Window& window )
 {

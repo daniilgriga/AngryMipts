@@ -1,5 +1,5 @@
 // ============================================================
-// OnlineScoreClient.hpp — Online score/leaderboard client API.
+// online_score_client.hpp — Online score/leaderboard client API.
 // Part of: angry::data
 //
 // Declares backend integration surface for leaderboard flows:

@@ -107,7 +107,7 @@ add_library(angry_data
     src/data/level_loader.cpp
     src/data/logger.cpp
     src/data/score_saver.cpp
-    src/data/OnlineScoreClient.cpp
+    src/data/online_score_client.cpp
     src/data/session_manager.cpp
 )
 target_include_directories(angry_data PUBLIC src)

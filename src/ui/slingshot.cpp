@@ -20,6 +20,8 @@
 namespace angry
 {
 
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 std::optional<Command> Slingshot::handle_input ( const platform::Event& event,
                                                   const SlingshotState& sling,
                                                   const platform::Window& window,
@@ -142,6 +144,8 @@ std::optional<Command> Slingshot::handle_input ( const platform::Event& event,
     return std::nullopt;
 }
 
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void Slingshot::render ( platform::RenderTarget& target, const SlingshotState& sling,
                          const platform::Texture& projectile_tex )
 {
@@ -260,6 +264,8 @@ void Slingshot::render ( platform::RenderTarget& target, const SlingshotState& s
 
 #endif
 }
+
+// #=# Trajectory Prediction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 std::vector<platform::Vec2f> Slingshot::calc_trajectory ( platform::Vec2f launch_vel,
                                                            platform::Vec2f start,

@@ -66,6 +66,8 @@ void draw_soft_glow ( platform::Vec2f pos, float radius, platform::Color color )
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 MenuScene::MenuScene ( const platform::Font& font, AccountService& accounts )
     : accounts_ ( accounts )
     , font_( font )
@@ -90,6 +92,8 @@ MenuScene::MenuScene ( const platform::Font& font, AccountService& accounts )
     badge_btn_.font_  = &font_;
 #endif
 }
+
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 SceneId MenuScene::handle_input ( const platform::Event& event )
 {
@@ -168,6 +172,8 @@ SceneId MenuScene::handle_input ( const platform::Event& event )
 void MenuScene::update()
 {
 }
+
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void MenuScene::render( platform::Window& window )
 {

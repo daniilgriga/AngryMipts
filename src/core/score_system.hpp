@@ -23,7 +23,7 @@ public:
     void add(int amount);
     int score() const;
 
-    int starsFor(int star1Threshold, int star2Threshold, int star3Threshold) const;
+    int stars_for(int star_1_threshold, int star_2_threshold, int star_3_threshold) const;
 
 private:
     int score_ = 0;
