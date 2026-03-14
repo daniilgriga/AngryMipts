@@ -1,3 +1,14 @@
+// ============================================================
+// OnlineScoreClient.cpp — Online score client implementation.
+// Part of: angry::data
+//
+// Implements network interactions with leaderboard backend:
+//   * Resolves backend URL from arg/env/default
+//   * Executes requests with retry on transient failures
+//   * Submits scores (legacy and JWT-authenticated variants)
+//   * Fetches/parses leaderboard data with status mapping
+// ============================================================
+
 #include "OnlineScoreClient.hpp"
 
 #include "logger.hpp"
@@ -13,6 +24,8 @@ namespace angry
 {
 
 using json = nlohmann::json;
+
+// #=# Local Helpers & Constants #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 namespace
 {
@@ -109,6 +122,8 @@ platform::http::Response performRequestWithRetry( const char* opName, RequestFn&
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
     : baseUrl_( resolveBackendUrl( std::move( baseUrl ) ) )
 {
@@ -120,6 +135,8 @@ OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
             Logger::info( "OnlineScoreClient backend URL: {}", baseUrl_ );
         } );
 }
+
+// #=# Score Submission API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool OnlineScoreClient::submitScore(
     const std::string& playerName,
@@ -221,6 +238,8 @@ bool OnlineScoreClient::submitScoreWithToken(
     Logger::info( "OnlineScoreClient::submitScoreWithToken success." );
     return true;
 }
+
+// #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId)
 {

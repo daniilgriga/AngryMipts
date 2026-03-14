@@ -1,3 +1,14 @@
+// ============================================================
+// OnlineScoreClient.hpp — Online score/leaderboard client API.
+// Part of: angry::data
+//
+// Declares backend integration surface for leaderboard flows:
+//   * Score submission (legacy + JWT token variants)
+//   * Leaderboard fetch with explicit status reporting
+//   * Simplified entries-only fetch helper
+//   * Base URL configuration for environments
+// ============================================================
+
 #pragma once
 
 #include <string>
@@ -27,6 +38,8 @@ struct LeaderboardFetchResult
     std::vector<LeaderboardEntry> entries;
 };
 
+// Performs score and leaderboard HTTP requests and exposes
+// compact result models for account/UI services.
 class OnlineScoreClient
 {
 public:

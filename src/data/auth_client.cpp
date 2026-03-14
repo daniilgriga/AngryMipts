@@ -1,3 +1,14 @@
+// ============================================================
+// auth_client.cpp — Backend authentication client implementation.
+// Part of: angry::data
+//
+// Implements register/login request flow:
+//   * Resolves backend URL from explicit arg/env/default
+//   * Builds JSON request payloads and parses responses
+//   * Normalizes transport/server errors into AuthResult
+//   * Emits concise diagnostics for auth operations
+// ============================================================
+
 #include "data/auth_client.hpp"
 
 #include "data/logger.hpp"
@@ -10,6 +21,9 @@
 
 namespace angry
 {
+
+// #=# Local Helpers & Constants #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -107,10 +121,14 @@ AuthResult postAuthRequest(
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 AuthClient::AuthClient( std::string baseUrl )
     : baseUrl_( resolveBackendUrl( std::move( baseUrl ) ) )
 {
 }
+
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 AuthResult AuthClient::registerUser(
     const std::string& username,
