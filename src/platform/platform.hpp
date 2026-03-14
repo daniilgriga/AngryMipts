@@ -1,10 +1,14 @@
-#pragma once
+// ============================================================
+// platform.hpp — Unified platform abstraction include.
+// Part of: angry::platform
+//
+// Selects active platform backend by build target:
+//   * Includes SFML aliases on native builds
+//   * Includes Raylib wrapper on Emscripten builds
+//   * Keeps upper layers backend-agnostic
+// ============================================================
 
-// ============================================================
-// platform.hpp — single include for all platform abstractions.
-// On native builds:  thin wrappers / aliases over SFML types.
-// On Emscripten/web: Raylib-based implementations.
-// ============================================================
+#pragma once
 
 #ifdef __EMSCRIPTEN__
 #  include "platform_raylib.hpp"

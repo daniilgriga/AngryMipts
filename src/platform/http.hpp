@@ -1,3 +1,14 @@
+// ============================================================
+// http.hpp — Cross-platform HTTP helper interface.
+// Part of: angry::platform
+//
+// Provides minimal HTTP primitives used by data clients:
+//   * GET/POST request wrappers for native and web builds
+//   * Shared Response model with status/error fields
+//   * Header/query parameter aliases and helpers
+//   * Platform-specific implementation under one API
+// ============================================================
+
 #pragma once
 
 #include <string>

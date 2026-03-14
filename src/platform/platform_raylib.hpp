@@ -1,10 +1,14 @@
-#pragma once
+// ============================================================
+// platform_raylib.hpp — Raylib backend platform types.
+// Part of: angry::platform
+//
+// Implements platform abstraction for web/Emscripten target:
+//   * Defines platform:: API compatible with SFML-facing code
+//   * Adapts events, drawing, audio, and window interfaces
+//   * Keeps gameplay/render modules backend-independent
+// ============================================================
 
-// ============================================================
-// platform_raylib.hpp — Raylib backend (Emscripten/web builds).
-// Defines platform:: types matching the SFML backend API
-// so that platform-agnostic code compiles on both targets.
-// ============================================================
+#pragma once
 
 #include <raylib.h>
 #include <algorithm>

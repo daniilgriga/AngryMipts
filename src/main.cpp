@@ -1,3 +1,14 @@
+// ============================================================
+// main.cpp — Application bootstrap and scene wiring.
+// Part of: angry::app
+//
+// Initializes runtime and launches the game loop:
+//   * Creates window/font and core services
+//   * Instantiates scenes and registers transitions
+//   * Runs native loop or Emscripten frame callback
+//   * Handles platform-specific frame limiting behavior
+// ============================================================
+
 #include "data/account_service.hpp"
 #include "platform/platform.hpp"
 #include "ui/game_scene.hpp"
