@@ -23,6 +23,8 @@ struct LevelScore
     int bestStars;  // 0..3
 };
 
+// Persists best results per level in local JSON storage and
+// merges new submissions using "best score / best stars" policy.
 class ScoreSaver
 {
 public:

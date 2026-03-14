@@ -25,6 +25,8 @@ enum class SceneId
     None,
 };
 
+// Abstract UI scene contract for input, update, and render
+// steps managed centrally by SceneManager navigation logic.
 class Scene
 {
 public:

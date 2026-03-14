@@ -18,6 +18,8 @@ namespace angry
 {
 
 template <typename T>
+// Thread-safe FIFO queue with non-blocking pop; used for
+// cross-thread command/event passing between runtime and physics.
 class ThreadSafeQueue
 {
 private:

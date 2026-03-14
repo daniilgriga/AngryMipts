@@ -29,6 +29,8 @@ struct LevelResult
     std::vector<LeaderboardEntry> leaderboard;
 };
 
+// Shows post-level outcome summary and leaderboard state, and
+// handles retry/menu navigation from the result screen.
 class ResultScene : public Scene
 {
 private:
