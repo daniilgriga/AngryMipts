@@ -30,6 +30,7 @@ namespace angry
 {
 namespace
 {
+// #=# Local Constants & Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 #ifdef __EMSCRIPTEN__
 constexpr PhysicsMode kDefaultPhysicsMode = PhysicsMode::SingleThread;
@@ -597,6 +598,8 @@ WorldSnapshot GameScene::make_mock_snapshot()
     return snap;
 }
 
+// #=# Construction / Render Targets #=#=#=#=#=#=#=#=#=#=#=#=#
+
 GameScene::GameScene ( const platform::Font& font, AccountService* accounts )
     : accounts_ ( accounts )
     , physics_ ( kDefaultPhysicsMode )
@@ -718,6 +721,8 @@ void GameScene::rebuild_render_targets ( platform::Vec2u size )
     render_targets_dirty_ = false;
 #endif
 }
+
+// #=# Level Flow / Result Sync #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void GameScene::load_level ( int level_id, const std::string& scores_path )
 {
@@ -900,6 +905,8 @@ void GameScene::finish_level()
 
     pending_scene_ = SceneId::Result;
 }
+
+// #=# Events / Runtime Bridge #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool GameScene::poll_result_update()
 {
@@ -1253,6 +1260,8 @@ void GameScene::process_events()
     }
 }
 
+// #=# Scene Interface (Input) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 SceneId GameScene::poll_pending_scene()
 {
     if ( pending_scene_ != SceneId::None )
@@ -1335,6 +1344,8 @@ SceneId GameScene::handle_input ( const platform::Event& event )
 
     return SceneId::None;
 }
+
+// #=# Scene Interface (Update) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void GameScene::update()
 {
@@ -1516,6 +1527,8 @@ void GameScene::update()
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
                           + "   [Space] Ability   [Backspace] Menu" );
 }
+
+// #=# Scene Interface (Render) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void GameScene::render ( platform::Window& window )
 {
