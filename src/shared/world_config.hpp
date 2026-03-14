@@ -18,7 +18,8 @@ namespace angry::world
 // must use the same values to avoid scale and bounds drift.
 inline constexpr float kWidthPx = 1280.0f;
 inline constexpr float kHeightPx = 720.0f;
-inline constexpr float kGroundTopYpx = 600.0f;
+inline constexpr float kGroundTopYPx = 600.0f;
+inline constexpr float kGroundTopYpx = kGroundTopYPx;  // backward-compatible alias
 
 inline constexpr float kAspect = kWidthPx / kHeightPx;
 inline constexpr float kBoundaryThicknessPx = 20.0f;
