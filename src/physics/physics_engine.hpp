@@ -98,28 +98,28 @@ private:
 
     // #=# Internal State #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-    EntityId nextId_ = 1;
+    EntityId next_id_ = 1;
     WorldSnapshot snapshot_{};
-    b2WorldId worldId_ = b2_nullWorldId;
+    b2WorldId world_id_ = b2_nullWorldId;
     std::vector<BodyBinding> bodies_;
     std::vector<Event> events_;
-    std::vector<Command> pendingCommands_;
-    ScoreSystem scoreSystem_;
-    std::unordered_map<int, LevelData> levelRegistry_;
+    std::vector<Command> pending_commands_;
+    ScoreSystem score_system_;
+    std::unordered_map<int, LevelData> level_registry_;
 
-    LevelData currentLevel_{};
-    bool levelLoaded_ = false;
+    LevelData current_level_{};
+    bool level_loaded_ = false;
     bool paused_ = false;
-    float levelYOffsetPx_ = 0.0f;
-    float supportBottomPx_ = 0.0f;
-    float groundTopYpx_ = 600.0f;
+    float level_y_offset_px_ = 0.0f;
+    float support_bottom_px_ = 0.0f;
+    float ground_top_ypx_ = 600.0f;
 
-    int nextProjectileIndex_ = 0;
-    b2BodyId activeProjectileBodyId_ = b2_nullBodyId;
-    int activeProjectileSettledFrames_ = 0;
-    float activeProjectileSettledTimeSec_ = 0.0f;
-    ProjectileType activeProjectileType_ = ProjectileType::Standard;
-    bool activeProjectileAbilityUsed_ = false;
+    int next_projectile_index_ = 0;
+    b2BodyId active_projectile_body_id_ = b2_nullBodyId;
+    int active_projectile_settled_frames_ = 0;
+    float active_projectile_settled_time_sec_ = 0.0f;
+    ProjectileType active_projectile_type_ = ProjectileType::Standard;
+    bool active_projectile_ability_used_ = false;
 };
 
 }  // namespace angry
