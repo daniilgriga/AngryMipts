@@ -284,10 +284,9 @@ bool OnlineScoreClient::submit_score_with_token(
 
     if ( is_insecure_non_local_url( base_url_ ) )
     {
-        Logger::error(
-            "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
+        Logger::info(
+            "OnlineScoreClient::submit_score_with_token: insecure backend URL '{}'",
             base_url_ );
-        return false;
     }
 
     Logger::info( "Submitting score with token" );
@@ -382,11 +381,9 @@ void OnlineScoreClient::submit_score_with_token_async(
 
     if ( is_insecure_non_local_url( base_url_ ) )
     {
-        Logger::error(
-            "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
+        Logger::info(
+            "OnlineScoreClient::submit_score_with_token: insecure backend URL '{}'",
             base_url_ );
-        on_done( false );
-        return;
     }
 
     const std::string submit_url = base_url_ + "/scores";
