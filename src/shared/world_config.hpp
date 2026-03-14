@@ -1,3 +1,14 @@
+// ============================================================
+// world_config.hpp — Canonical world-space constants.
+// Part of: angry::shared
+//
+// Defines global gameplay-space bounds in pixels:
+//   * Visible world size shared by physics and renderer
+//   * Ground top position used by level placement logic
+//   * Boundary dimensions for off-screen containment bodies
+//   * Aspect ratio helper for camera/view calculations
+// ============================================================
+
 #pragma once
 
 namespace angry::world

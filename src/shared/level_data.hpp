@@ -1,3 +1,14 @@
+// ============================================================
+// level_data.hpp — Serializable level content structures.
+// Part of: angry::shared
+//
+// Declares immutable gameplay data loaded from level files:
+//   * Block/target/projectile record layouts
+//   * Slingshot and star-threshold metadata
+//   * Shape-specific parameters (circle/triangle/rect)
+//   * Top-level LevelData aggregate passed to systems
+// ============================================================
+
 #pragma once
 #include <string>
 #include <vector>

@@ -1,3 +1,14 @@
+// ============================================================
+// command.hpp — Commands sent to physics simulation.
+// Part of: angry::shared
+//
+// Defines command payloads exchanged with physics runtime:
+//   * Launch, restart, and level-loading requests
+//   * Pause toggles for simulation state control
+//   * Ability activation for current projectile
+//   * Unified Command variant for queue-based dispatch
+// ============================================================
+
 #pragma once
 #include <variant>
 
