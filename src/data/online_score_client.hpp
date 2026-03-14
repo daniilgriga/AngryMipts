@@ -44,27 +44,27 @@ struct LeaderboardFetchResult
 class OnlineScoreClient
 {
 public:
-    explicit OnlineScoreClient(std::string baseUrl = "");
+    explicit OnlineScoreClient(std::string base_url = "");
 
     // Legacy API kept for transitional compatibility.
     // For JWT backend use submit_score_with_token(...).
-    bool submit_score(const std::string& playerName, int levelId, int score, int stars) const;
+    bool submit_score(const std::string& player_name, int level_id, int score, int stars) const;
     bool submit_score_with_token(
-        const std::string& token, int levelId, int score, int stars ) const;
-    LeaderboardFetchResult fetch_leaderboard_with_status(int levelId) const;
-    std::vector<LeaderboardEntry> fetch_leaderboard(int levelId) const;
+        const std::string& token, int level_id, int score, int stars ) const;
+    LeaderboardFetchResult fetch_leaderboard_with_status(int level_id) const;
+    std::vector<LeaderboardEntry> fetch_leaderboard(int level_id) const;
     void submit_score_with_token_async(
         const std::string& token,
-        int levelId,
+        int level_id,
         int score,
         int stars,
         std::function<void(bool)> on_done ) const;
     void fetch_leaderboard_with_status_async(
-        int levelId,
+        int level_id,
         std::function<void(LeaderboardFetchResult)> on_done ) const;
 
 private:
-    std::string baseUrl_;
+    std::string base_url_;
 };
 
 }  // namespace angry

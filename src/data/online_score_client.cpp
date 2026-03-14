@@ -59,11 +59,11 @@ bool is_insecure_non_local_url( const std::string& url )
     return starts_with( url, "http://" ) && !is_local_http_url( url );
 }
 
-std::string resolve_backend_url( std::string baseUrl )
+std::string resolve_backend_url( std::string base_url )
 {
-    if ( !baseUrl.empty() )
+    if ( !base_url.empty() )
     {
-        return baseUrl;
+        return base_url;
     }
 
     const char* envUrl = std::getenv( kBackendUrlEnvVar );
@@ -207,23 +207,23 @@ LeaderboardFetchResult parse_leaderboard_response( const platform::http::Respons
 
 // #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
-    : baseUrl_( resolve_backend_url( std::move( baseUrl ) ) )
+OnlineScoreClient::OnlineScoreClient(std::string base_url)
+    : base_url_( resolve_backend_url( std::move( base_url ) ) )
 {
     static std::once_flag logBackendUrlOnce;
     std::call_once(
         logBackendUrlOnce,
         [this]()
         {
-            Logger::info( "OnlineScoreClient backend URL: {}", baseUrl_ );
+            Logger::info( "OnlineScoreClient backend URL: {}", base_url_ );
         } );
 }
 
 // #=# Score Submission API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool OnlineScoreClient::submit_score(
-    const std::string& playerName,
-    int levelId,
+    const std::string& player_name,
+    int level_id,
     int score,
     int stars) const
 {
@@ -233,8 +233,8 @@ bool OnlineScoreClient::submit_score(
     Logger::info( "Submitting score to backend..." );
 
     const json body = {
-        {"playerName", playerName},
-        {"levelId", levelId},
+        {"playerName", player_name},
+        {"levelId", level_id},
         {"score", score},
         {"stars", stars},
     };
@@ -244,7 +244,7 @@ bool OnlineScoreClient::submit_score(
         [&]()
         {
             return platform::http::post(
-                baseUrl_ + "/scores",
+                base_url_ + "/scores",
                 body.dump(),
                 platform::http::Headers {
                     {"Content-Type", "application/json"},
@@ -272,7 +272,7 @@ bool OnlineScoreClient::submit_score(
 
 bool OnlineScoreClient::submit_score_with_token(
     const std::string& token,
-    int levelId,
+    int level_id,
     int score,
     int stars) const
 {
@@ -282,18 +282,18 @@ bool OnlineScoreClient::submit_score_with_token(
         return false;
     }
 
-    if ( is_insecure_non_local_url( baseUrl_ ) )
+    if ( is_insecure_non_local_url( base_url_ ) )
     {
         Logger::error(
             "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
-            baseUrl_ );
+            base_url_ );
         return false;
     }
 
     Logger::info( "Submitting score with token" );
 
     const json body = {
-        {"levelId", levelId},
+        {"levelId", level_id},
         {"score", score},
         {"stars", stars},
     };
@@ -303,7 +303,7 @@ bool OnlineScoreClient::submit_score_with_token(
         [&]()
         {
             return platform::http::post(
-                baseUrl_ + "/scores",
+                base_url_ + "/scores",
                 body.dump(),
                 platform::http::Headers {
                     {"Content-Type", "application/json"},
@@ -332,16 +332,16 @@ bool OnlineScoreClient::submit_score_with_token(
 
 // #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int levelId) const
+LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int level_id) const
 {
     const platform::http::Response response = perform_request_with_retry(
         "fetch_leaderboard",
         [&]()
         {
             return platform::http::get(
-                baseUrl_ + "/leaderboard",
+                base_url_ + "/leaderboard",
                 platform::http::QueryParams {
-                    {"levelId", std::to_string( levelId )},
+                    {"levelId", std::to_string( level_id )},
                 },
                 platform::http::Headers {},
                 kBackendTimeoutMs );
@@ -350,14 +350,14 @@ LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int leve
     return parse_leaderboard_response( response );
 }
 
-std::vector<LeaderboardEntry> OnlineScoreClient::fetch_leaderboard(int levelId) const
+std::vector<LeaderboardEntry> OnlineScoreClient::fetch_leaderboard(int level_id) const
 {
-    return fetch_leaderboard_with_status( levelId ).entries;
+    return fetch_leaderboard_with_status( level_id ).entries;
 }
 
 void OnlineScoreClient::submit_score_with_token_async(
     const std::string& token,
-    int levelId,
+    int level_id,
     int score,
     int stars,
     std::function<void(bool)> on_done ) const
@@ -365,7 +365,7 @@ void OnlineScoreClient::submit_score_with_token_async(
 #ifndef __EMSCRIPTEN__
     if ( on_done )
     {
-        on_done( submit_score_with_token( token, levelId, score, stars ) );
+        on_done( submit_score_with_token( token, level_id, score, stars ) );
     }
 #else
     if ( !on_done )
@@ -380,18 +380,18 @@ void OnlineScoreClient::submit_score_with_token_async(
         return;
     }
 
-    if ( is_insecure_non_local_url( baseUrl_ ) )
+    if ( is_insecure_non_local_url( base_url_ ) )
     {
         Logger::error(
             "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
-            baseUrl_ );
+            base_url_ );
         on_done( false );
         return;
     }
 
-    const std::string submit_url = baseUrl_ + "/scores";
+    const std::string submit_url = base_url_ + "/scores";
     const json body = {
-        {"levelId", levelId},
+        {"levelId", level_id},
         {"score", score},
         {"stars", stars},
     };
@@ -431,13 +431,13 @@ void OnlineScoreClient::submit_score_with_token_async(
 }
 
 void OnlineScoreClient::fetch_leaderboard_with_status_async(
-    int levelId,
+    int level_id,
     std::function<void(LeaderboardFetchResult)> on_done ) const
 {
 #ifndef __EMSCRIPTEN__
     if ( on_done )
     {
-        on_done( fetch_leaderboard_with_status( levelId ) );
+        on_done( fetch_leaderboard_with_status( level_id ) );
     }
 #else
     if ( !on_done )
@@ -445,11 +445,11 @@ void OnlineScoreClient::fetch_leaderboard_with_status_async(
         return;
     }
 
-    const std::string leaderboard_url = baseUrl_ + "/leaderboard";
+    const std::string leaderboard_url = base_url_ + "/leaderboard";
     platform::http::get_async(
         leaderboard_url,
         platform::http::QueryParams {
-            {"levelId", std::to_string( levelId )},
+            {"levelId", std::to_string( level_id )},
         },
         platform::http::Headers {},
         kBackendTimeoutMs,
