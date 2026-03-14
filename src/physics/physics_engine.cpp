@@ -409,6 +409,8 @@ PhysicsEngine::~PhysicsEngine()
     }
 }
 
+// #=# Level Lifecycle API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void PhysicsEngine::registerLevel(const LevelData& level)
 {
     levelRegistry_[level.meta.id] = level;

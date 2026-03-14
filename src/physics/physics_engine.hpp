@@ -34,6 +34,8 @@ namespace angry
 class PhysicsEngine
 {
 public:
+    // #=# Lifecycle & Simulation API #=#=#=#=#=#=#=#=#=#=#=#=#=#
+
     ~PhysicsEngine();
 
     void registerLevel(const LevelData& level);
@@ -45,6 +47,8 @@ public:
     std::vector<Event> drainEvents();
 
 private:
+    // #=# Internal State Types #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
     struct BodyBinding
     {
         EntityId id = INVALID_ID;
@@ -77,6 +81,8 @@ private:
         bool boomerangReturning = false;
     };
 
+    // #=# Internal Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
     void applyCommand(const Command& cmd);
     void createGround(float topYpx);
     void createBlockBody(const BlockData& block);
@@ -89,6 +95,8 @@ private:
     bool hasAliveProjectiles() const;
     Vec2 computeLaunchVelocityPx(const Vec2& pullVectorPx) const;
     BodyBinding* findBinding(b2BodyId bodyId);
+
+    // #=# Internal State #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
     EntityId nextId_ = 1;
     WorldSnapshot snapshot_{};
