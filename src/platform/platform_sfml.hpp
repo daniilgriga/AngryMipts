@@ -1,10 +1,14 @@
-#pragma once
+// ============================================================
+// platform_sfml.hpp — SFML backend platform aliases.
+// Part of: angry::platform
+//
+// Implements native platform abstraction via SFML aliases:
+//   * Maps platform:: types directly to SFML equivalents
+//   * Avoids wrapper overhead for native desktop builds
+//   * Keeps shared engine/ui code backend-neutral
+// ============================================================
 
-// ============================================================
-// platform_sfml.hpp — SFML backend (native builds).
-// All platform types are direct SFML types — zero overhead,
-// no wrapping, existing code needs no changes to compile.
-// ============================================================
+#pragma once
 
 #include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
@@ -56,7 +60,7 @@ using Time  = sf::Time;
 using RenderTexture = sf::RenderTexture;
 
 // ── Angle helper (SFML 3) ───────────────────────────────────
-inline auto degrees( float v ) { return sf::degrees( v ); }
+inline auto degrees( float angle_deg ) { return sf::degrees( angle_deg ); }
 
 }  // namespace platform
 

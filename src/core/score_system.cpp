@@ -1,7 +1,20 @@
+// ============================================================
+// score_system.cpp — Score and stars logic implementation.
+// Part of: angry::core
+//
+// Implements score progression rules:
+//   * Resets score between level runs
+//   * Accepts only positive score increments
+//   * Returns current score snapshot value
+//   * Maps score to stars by threshold comparison
+// ============================================================
+
 #include "score_system.hpp"
 
 namespace angry
 {
+
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void ScoreSystem::reset()
 {

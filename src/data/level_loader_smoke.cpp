@@ -1,3 +1,14 @@
+// ============================================================
+// level_loader_smoke.cpp — Data-layer smoke executable.
+// Part of: angry::data
+//
+// Implements a lightweight runtime sanity check that:
+//   * Loads selected level JSON files via LevelLoader
+//   * Verifies presence of triangle vertices on test level
+//   * Exercises ScoreSaver best-value update behavior
+//   * Returns non-zero on any failed expectation
+// ============================================================
+
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -10,6 +21,7 @@
 namespace
 {
 
+// Throws when a smoke condition fails to keep main flow linear.
 void expect( bool condition, const std::string& message )
 {
     if ( !condition )
@@ -19,6 +31,8 @@ void expect( bool condition, const std::string& message )
 }
 
 }  // namespace
+
+// #=# Smoke Entry Point #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 int main()
 {

@@ -1,3 +1,14 @@
+// ============================================================
+// level_loader.hpp — Level JSON loading interface.
+// Part of: angry::data
+//
+// Declares level-file deserialization entry points:
+//   * Loads full LevelData from one JSON file
+//   * Loads LevelMeta list from levels directory
+//   * Validates schema and value ranges in implementation
+//   * Returns strongly typed shared level structures
+// ============================================================
+
 #pragma once
 #include <string>
 #include <vector>
@@ -7,6 +18,8 @@
 namespace angry
 {
 
+// Loads and validates level definitions from JSON files into
+// strongly typed runtime data structures.
 class LevelLoader
 {
 public:

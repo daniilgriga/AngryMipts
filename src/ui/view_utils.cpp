@@ -1,3 +1,13 @@
+// ============================================================
+// view_utils.cpp — UI view helper implementation.
+// Part of: angry::ui
+//
+// Implements viewport utilities shared by UI scenes:
+//   * Applies pillarbox/letterbox depending on window ratio
+//   * Preserves canonical gameplay world aspect
+//   * Handles backend-specific viewport API differences
+// ============================================================
+
 #include "ui/view_utils.hpp"
 
 #include "shared/world_config.hpp"

@@ -1,3 +1,14 @@
+// ============================================================
+// result_scene.cpp — Post-level result scene implementation.
+// Part of: angry::ui
+//
+// Implements result presentation flow:
+//   * Renders win/lose summary, score, and stars
+//   * Displays leaderboard or fetch-state placeholders
+//   * Handles retry/menu navigation controls
+//   * Animates result-specific visual elements
+// ============================================================
+
 #include "ui/result_scene.hpp"
 
 #ifndef __EMSCRIPTEN__

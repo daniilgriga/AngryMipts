@@ -1,3 +1,14 @@
+// ============================================================
+// event.hpp — Events emitted by physics and game logic.
+// Part of: angry::shared
+//
+// Defines event payloads consumed by UI/render/audio layers:
+//   * Collision and destruction notifications
+//   * Score and target-hit updates
+//   * Level completion and projectile readiness signals
+//   * Unified Event variant for non-blocking draining
+// ============================================================
+
 #pragma once
 #include <variant>
 

@@ -1,3 +1,14 @@
+// ============================================================
+// slingshot.cpp — Slingshot interaction implementation.
+// Part of: angry::ui
+//
+// Implements drag-to-launch mechanics and rendering:
+//   * Converts pointer drag into launch pull vector
+//   * Clamps pull by slingshot maximum distance
+//   * Draws bands, projectile, and trajectory preview
+//   * Emits LaunchCmd on release when shooting is allowed
+// ============================================================
+
 #include "ui/slingshot.hpp"
 
 #ifndef __EMSCRIPTEN__

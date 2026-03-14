@@ -1,3 +1,14 @@
+// ============================================================
+// menu_scene.cpp — Main menu scene implementation.
+// Part of: angry::ui
+//
+// Implements top-level menu behavior:
+//   * Renders title/prompt and account badge controls
+//   * Handles pointer/keyboard navigation events
+//   * Produces scene transitions to login/level select
+//   * Keeps visual menu state and hit regions
+// ============================================================
+
 #include "ui/menu_scene.hpp"
 
 #ifndef __EMSCRIPTEN__
@@ -90,7 +101,7 @@ SceneId MenuScene::handle_input ( const platform::Event& event )
 
         if ( key->code == sf::Keyboard::Key::L )
         {
-            if ( accounts_.isLoggedIn() )
+            if ( accounts_.is_logged_in() )
                 accounts_.logout();
             else
                 return SceneId::Login;
@@ -108,7 +119,7 @@ SceneId MenuScene::handle_input ( const platform::Event& event )
 
             if ( rect_badge_btn_.contains ( pos ) )
             {
-                if ( accounts_.isLoggedIn() )
+                if ( accounts_.is_logged_in() )
                     accounts_.logout();
                 else
                     return SceneId::Login;
@@ -125,7 +136,7 @@ SceneId MenuScene::handle_input ( const platform::Event& event )
             return SceneId::LevelSelect;
         if ( key->key == KEY_L )
         {
-            if ( accounts_.isLoggedIn() )
+            if ( accounts_.is_logged_in() )
                 accounts_.logout();
             else
                 return SceneId::Login;
@@ -141,7 +152,7 @@ SceneId MenuScene::handle_input ( const platform::Event& event )
                 return SceneId::LevelSelect;
             if ( rect_badge_btn_.contains( pos ) )
             {
-                if ( accounts_.isLoggedIn() )
+                if ( accounts_.is_logged_in() )
                     accounts_.logout();
                 else
                     return SceneId::Login;
@@ -241,7 +252,7 @@ void MenuScene::render( platform::Window& window )
     pill.setOutlineColor ( sf::Color ( 80, 140, 220, 110 ) );
     window.draw ( pill );
 
-    if ( accounts_.isLoggedIn() )
+    if ( accounts_.is_logged_in() )
     {
         badge_text_.setString ( "Logged in as " + accounts_.username() );
         badge_text_.setFillColor ( sf::Color ( 100, 220, 140 ) );
@@ -321,15 +332,15 @@ void MenuScene::render( platform::Window& window )
         DrawRectangleLinesEx( {badge_right-pill_w, badge_top, pill_w, pill_h}, 1.5f,
                               platform::Color(80,140,220,110).to_rl() );
 
-        std::string badge_str = accounts_.isLoggedIn()
+        std::string badge_str = accounts_.is_logged_in()
             ? "Logged in as " + accounts_.username() : "Guest mode";
-        ::Color badge_col = accounts_.isLoggedIn()
+        ::Color badge_col = accounts_.is_logged_in()
             ? platform::Color(100,220,140).to_rl() : platform::Color(200,180,100).to_rl();
         DrawTextEx( font_.rl, badge_str.c_str(),
                     {badge_right-pill_w+12.f, badge_top+6.f}, 18.f, 1.f, badge_col );
 
-        std::string btn_str = accounts_.isLoggedIn() ? "[L] Logout" : "[L] Login";
-        ::Color btn_col = accounts_.isLoggedIn()
+        std::string btn_str = accounts_.is_logged_in() ? "[L] Logout" : "[L] Login";
+        ::Color btn_col = accounts_.is_logged_in()
             ? platform::Color(255,120,120).to_rl() : platform::Color(80,160,255).to_rl();
         DrawTextEx( font_.rl, btn_str.c_str(),
                     {badge_right-pill_w+12.f, badge_top+30.f}, 16.f, 1.f, btn_col );

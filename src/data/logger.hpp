@@ -1,3 +1,14 @@
+// ============================================================
+// logger.hpp — Lightweight timestamped logging interface.
+// Part of: angry::data
+//
+// Declares shared logging utility used across modules:
+//   * INFO/ERROR output channels
+//   * Minimal "{}" placeholder formatting helper
+//   * Header-only templated formatting entry points
+//   * Backend log sink implemented in logger.cpp
+// ============================================================
+
 #pragma once
 #include <sstream>
 #include <string>
@@ -6,6 +17,8 @@
 namespace angry
 {
 
+// Provides tiny formatting-aware logging API without external
+// dependencies; suitable for gameplay/runtime diagnostics.
 class Logger
 {
 public:

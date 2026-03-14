@@ -1,3 +1,14 @@
+// ============================================================
+// OnlineScoreClient.hpp — Online score/leaderboard client API.
+// Part of: angry::data
+//
+// Declares backend integration surface for leaderboard flows:
+//   * Score submission (legacy + JWT token variants)
+//   * Leaderboard fetch with explicit status reporting
+//   * Simplified entries-only fetch helper
+//   * Base URL configuration for environments
+// ============================================================
+
 #pragma once
 
 #include <string>
@@ -27,17 +38,19 @@ struct LeaderboardFetchResult
     std::vector<LeaderboardEntry> entries;
 };
 
+// Performs score and leaderboard HTTP requests and exposes
+// compact result models for account/UI services.
 class OnlineScoreClient
 {
 public:
     explicit OnlineScoreClient(std::string baseUrl = "");
 
     // Legacy API kept for transitional compatibility.
-    // For JWT backend use submitScoreWithToken(...).
-    bool submitScore(const std::string& playerName, int levelId, int score, int stars);
-    bool submitScoreWithToken(const std::string& token, int levelId, int score, int stars);
-    LeaderboardFetchResult fetchLeaderboardWithStatus(int levelId);
-    std::vector<LeaderboardEntry> fetchLeaderboard(int levelId);
+    // For JWT backend use submit_score_with_token(...).
+    bool submit_score(const std::string& playerName, int levelId, int score, int stars);
+    bool submit_score_with_token(const std::string& token, int levelId, int score, int stars);
+    LeaderboardFetchResult fetch_leaderboard_with_status(int levelId);
+    std::vector<LeaderboardEntry> fetch_leaderboard(int levelId);
 
 private:
     std::string baseUrl_;

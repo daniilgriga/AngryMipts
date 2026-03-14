@@ -1,3 +1,14 @@
+// ============================================================
+// level_select_scene.cpp — Level selection scene implementation.
+// Part of: angry::ui
+//
+// Implements interactive level-browser behavior:
+//   * Loads and displays level metadata and local best scores
+//   * Requests leaderboard previews asynchronously
+//   * Handles keyboard/mouse selection and scrolling
+//   * Produces selected level id for scene transitions
+// ============================================================
+
 #include "ui/level_select_scene.hpp"
 
 #include "data/logger.hpp"
@@ -78,7 +89,7 @@ void LevelSelectScene::fetch_preview ( int level_id )
     std::thread ( [state, level_id]()
     {
         OnlineScoreClient client;
-        LeaderboardFetchResult r = client.fetchLeaderboardWithStatus ( level_id );
+        LeaderboardFetchResult r = client.fetch_leaderboard_with_status ( level_id );
 
         std::lock_guard<std::mutex> lock ( state->mutex );
         state->fetched_level_id = level_id;
@@ -91,7 +102,7 @@ void LevelSelectScene::fetch_preview ( int level_id )
     try
     {
         OnlineScoreClient client;
-        r = client.fetchLeaderboardWithStatus ( level_id );
+        r = client.fetch_leaderboard_with_status ( level_id );
     }
     catch ( const std::exception& e )
     {
@@ -231,7 +242,7 @@ SceneId LevelSelectScene::handle_input ( const platform::Event& event )
         }
         if ( key->code == sf::Keyboard::Key::L && accounts_ )
         {
-            if ( accounts_->isLoggedIn() ) accounts_->logout();
+            if ( accounts_->is_logged_in() ) accounts_->logout();
             else return SceneId::Login;
         }
         if ( key->code == sf::Keyboard::Key::PageUp )
@@ -261,7 +272,7 @@ SceneId LevelSelectScene::handle_input ( const platform::Event& event )
                                      static_cast<float>(click->position.y) );
             if ( rect_badge_.contains(pos) && accounts_ )
             {
-                if ( accounts_->isLoggedIn() ) accounts_->logout();
+                if ( accounts_->is_logged_in() ) accounts_->logout();
                 else return SceneId::Login;
                 return SceneId::None;
             }
@@ -292,7 +303,7 @@ SceneId LevelSelectScene::handle_input ( const platform::Event& event )
             { selected_level_id_ = levels_[selected_].id; return SceneId::Game; }
         if ( key->key == KEY_L && accounts_ )
         {
-            if ( accounts_->isLoggedIn() ) accounts_->logout();
+            if ( accounts_->is_logged_in() ) accounts_->logout();
             else return SceneId::Login;
         }
         if ( key->key == KEY_PAGE_UP )   preview_scroll_ = std::max(0.f, preview_scroll_ - 72.f);
@@ -318,7 +329,7 @@ SceneId LevelSelectScene::handle_input ( const platform::Event& event )
             platform::Vec2f pos { click->x, click->y };
             if ( rect_badge_.contains(pos) && accounts_ )
             {
-                if ( accounts_->isLoggedIn() ) accounts_->logout(); else return SceneId::Login;
+                if ( accounts_->is_logged_in() ) accounts_->logout(); else return SceneId::Login;
                 return SceneId::None;
             }
             for ( int i = 0; i < (int)rects_level_items_screen_.size(); ++i )
@@ -650,7 +661,7 @@ void LevelSelectScene::render ( platform::Window& window )
 
     rect_badge_ = sf::FloatRect ( {badge_right - pill_w, badge_top}, {pill_w, pill_h} );
 
-    if ( accounts_ && accounts_->isLoggedIn() )
+    if ( accounts_ && accounts_->is_logged_in() )
     {
         badge_text_.setString ( "Logged in as " + accounts_->username() );
         badge_text_.setFillColor ( sf::Color ( 100, 220, 140 ) );
@@ -834,7 +845,7 @@ void LevelSelectScene::render ( platform::Window& window )
                          platform::Color(80,140,220,110).to_rl());
     rect_badge_ = {badge_right-pill_w,badge_top2,pill_w,pill_h};
 
-    bool logged = accounts_ && accounts_->isLoggedIn();
+    bool logged = accounts_ && accounts_->is_logged_in();
     std::string badge_str = logged ? "Logged in as " + accounts_->username() : "Guest mode";
     platform::Color badge_col = logged ? platform::Color(100,220,140) : platform::Color(200,180,100);
     DrawTextEx(font_.rl,badge_str.c_str(),{badge_right-pill_w+10.f,badge_top2+6.f},17.f,1.f,badge_col.to_rl());

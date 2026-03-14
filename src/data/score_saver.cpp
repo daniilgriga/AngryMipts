@@ -1,3 +1,14 @@
+// ============================================================
+// score_saver.cpp — Best-score persistence implementation.
+// Part of: angry::data
+//
+// Implements local score file parsing and updates:
+//   * Validates levelId/score/stars constraints
+//   * Parses/serializes score JSON arrays
+//   * Updates only when new results improve previous best
+//   * Logs load/save outcomes for diagnostics
+// ============================================================
+
 #include "data/score_saver.hpp"
 
 #include <algorithm>
@@ -13,6 +24,9 @@
 
 namespace angry
 {
+
+// #=# Local Helpers & Validation #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -136,6 +150,8 @@ void writeScoresToFile( const std::string& filepath, const std::vector<LevelScor
 }
 
 }  // namespace
+
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 std::vector<LevelScore> ScoreSaver::loadScores( const std::string& filepath ) const
 {

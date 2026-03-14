@@ -1,3 +1,14 @@
+// ============================================================
+// game_scene.cpp — Main gameplay scene implementation.
+// Part of: angry::ui
+//
+// Implements in-level runtime orchestration:
+//   * Processes input and sends commands to physics runtime
+//   * Renders world snapshot, HUD, particles, and overlays
+//   * Handles gameplay events, score sync, and result output
+//   * Bridges data/account services with gameplay flow
+// ============================================================
+
 #include "ui/game_scene.hpp"
 
 #include "data/logger.hpp"
@@ -19,6 +30,7 @@ namespace angry
 {
 namespace
 {
+// #=# Local Constants & Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 #ifdef __EMSCRIPTEN__
 constexpr PhysicsMode kDefaultPhysicsMode = PhysicsMode::SingleThread;
@@ -586,6 +598,8 @@ WorldSnapshot GameScene::make_mock_snapshot()
     return snap;
 }
 
+// #=# Construction / Render Targets #=#=#=#=#=#=#=#=#=#=#=#=#
+
 GameScene::GameScene ( const platform::Font& font, AccountService* accounts )
     : accounts_ ( accounts )
     , physics_ ( kDefaultPhysicsMode )
@@ -708,6 +722,8 @@ void GameScene::rebuild_render_targets ( platform::Vec2u size )
 #endif
 }
 
+// #=# Level Flow / Result Sync #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void GameScene::load_level ( int level_id, const std::string& scores_path )
 {
     level_id_ = level_id;
@@ -728,8 +744,8 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     {
         const std::string path = resolveLevelPath ( level_id );
         const LevelData level = level_loader_.load ( path );
-        physics_.registerLevel ( level );
-        physics_.loadLevel ( level );
+        physics_.register_level ( level );
+        physics_.load_level ( level );
         if ( physics_.mode() == PhysicsMode::Threaded )
         {
             // Avoid blocking main thread while worker applies LoadLevelCmd.
@@ -739,7 +755,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
         }
         else
         {
-            snapshot_ = physics_.getSnapshot();
+            snapshot_ = physics_.get_snapshot();
         }
         frame_clock_.restart();
         Logger::info ( "GameScene: loaded level {}", level_id );
@@ -761,7 +777,7 @@ void GameScene::finish_level()
     const int score = snapshot_.score;
     const int stars = std::clamp ( snapshot_.stars, 0, 3 );
 
-    const bool logged_in = accounts_ && accounts_->isLoggedIn();
+    const bool logged_in = accounts_ && accounts_->is_logged_in();
     last_result_ = { won, score, stars, logged_in,
                      LeaderboardFetchStatus::Unavailable, {} };
     leaderboard_applied_ = true;
@@ -811,7 +827,7 @@ void GameScene::finish_level()
                             "GameScene: submitting score levelId={} score={} stars={} token={}",
                             level_id, score_value, stars_value,
                             auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
-                        const bool submit_ok = client.submitScoreWithToken (
+                        const bool submit_ok = client.submit_score_with_token (
                             auth_token, level_id, score_value, stars_value );
                         if ( !submit_ok )
                         {
@@ -825,7 +841,7 @@ void GameScene::finish_level()
                     }
 
                     Logger::info ( "GameScene: fetching leaderboard for levelId={}", level_id );
-                    fetch_result = client.fetchLeaderboardWithStatus ( level_id );
+                    fetch_result = client.fetch_leaderboard_with_status ( level_id );
                     Logger::info ( "GameScene: leaderboard for levelId={} has {} entries, status={}",
                                    level_id, fetch_result.entries.size(),
                                    static_cast<int> ( fetch_result.status ) );
@@ -858,7 +874,7 @@ void GameScene::finish_level()
                     "GameScene(web): submitting score levelId={} score={} stars={} token={}",
                     level_id_, score, stars,
                     auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
-                const bool submit_ok = online_score_client_.submitScoreWithToken (
+                const bool submit_ok = online_score_client_.submit_score_with_token (
                     auth_token, level_id_, score, stars );
                 if ( !submit_ok )
                 {
@@ -867,7 +883,7 @@ void GameScene::finish_level()
             }
 
             Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id_ );
-            fetch_result = online_score_client_.fetchLeaderboardWithStatus ( level_id_ );
+            fetch_result = online_score_client_.fetch_leaderboard_with_status ( level_id_ );
             Logger::info (
                 "GameScene(web): leaderboard for levelId={} has {} entries, status={}",
                 level_id_, fetch_result.entries.size(),
@@ -889,6 +905,8 @@ void GameScene::finish_level()
 
     pending_scene_ = SceneId::Result;
 }
+
+// #=# Events / Runtime Bridge #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool GameScene::poll_result_update()
 {
@@ -914,7 +932,7 @@ bool GameScene::poll_result_update()
 
 void GameScene::process_events()
 {
-    auto fresh_events = physics_.drainEvents();
+    auto fresh_events = physics_.drain_events();
     for ( auto& ev : fresh_events )
     {
         pending_events_.push_back ( std::move ( ev ) );
@@ -1242,6 +1260,8 @@ void GameScene::process_events()
     }
 }
 
+// #=# Scene Interface (Input) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 SceneId GameScene::poll_pending_scene()
 {
     if ( pending_scene_ != SceneId::None )
@@ -1325,6 +1345,8 @@ SceneId GameScene::handle_input ( const platform::Event& event )
     return SceneId::None;
 }
 
+// #=# Scene Interface (Update) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void GameScene::update()
 {
     const float raw_dt = frame_clock_.restart().asSeconds();
@@ -1407,9 +1429,9 @@ void GameScene::update()
 
     particles_.update ( dt );
 
-    physics_.processCommands ( command_queue_ );
+    physics_.process_commands ( command_queue_ );
     physics_.step ( dt );
-    const WorldSnapshot new_snap = physics_.getSnapshot();
+    const WorldSnapshot new_snap = physics_.get_snapshot();
     // Discard stale Win/Lose snapshots from the previous level until physics
     // confirms the new level is Running.
     if ( !snapshot_ready_ )
@@ -1505,6 +1527,8 @@ void GameScene::update()
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
                           + "   [Space] Ability   [Backspace] Menu" );
 }
+
+// #=# Scene Interface (Render) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void GameScene::render ( platform::Window& window )
 {

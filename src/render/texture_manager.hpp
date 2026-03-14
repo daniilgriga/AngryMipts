@@ -1,3 +1,14 @@
+// ============================================================
+// texture_manager.hpp — Render texture cache and factories.
+// Part of: angry::render
+//
+// Declares texture provisioning API used by renderer:
+//   * Lazy generation/loading of texture atlas entries
+//   * Material/projectile/target texture selection helpers
+//   * Internal cache keyed by logical texture identifier
+//   * Backend-neutral texture handle accessors
+// ============================================================
+
 #pragma once
 #include "platform/platform.hpp"
 #include "shared/types.hpp"
@@ -8,6 +19,8 @@
 namespace angry
 {
 
+// Owns generated/loaded textures and returns stable references
+// for renderer draw calls during gameplay frames.
 class TextureManager
 {
 private:

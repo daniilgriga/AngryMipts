@@ -1,3 +1,14 @@
+// ============================================================
+// level_loader.cpp — Level JSON loading implementation.
+// Part of: angry::data
+//
+// Implements robust level-file parsing and validation:
+//   * Converts JSON fields to typed LevelData structures
+//   * Validates geometry, ids, thresholds, and world bounds
+//   * Supports triangle vertices with winding normalization
+//   * Loads single levels and directory-wide level metadata
+// ============================================================
+
 #include "data/level_loader.hpp"
 
 #include <algorithm>
@@ -14,6 +25,9 @@
 
 namespace angry
 {
+
+// #=# Local Helpers & Parsers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -522,6 +536,8 @@ Json loadJsonFromFile( const std::filesystem::path& filepath )
 }
 
 }  // namespace
+
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 LevelData LevelLoader::load( const std::string& filepath ) const
 {

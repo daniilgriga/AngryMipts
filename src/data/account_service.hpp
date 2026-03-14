@@ -1,3 +1,14 @@
+// ============================================================
+// account_service.hpp — Auth/session/leaderboard facade API.
+// Part of: angry::data
+//
+// Declares high-level account workflows for game scenes:
+//   * Register+login and plain login orchestration
+//   * Session bootstrap, token access, and logout
+//   * Auth-gated score submission to online backend
+//   * Leaderboard retrieval with status/result wrappers
+// ============================================================
+
 #pragma once
 
 #include "data/auth_client.hpp"
@@ -10,6 +21,8 @@
 namespace angry
 {
 
+// Composes auth client, session persistence, and online score
+// client into one scene-friendly account service.
 class AccountService
 {
 public:
@@ -17,12 +30,12 @@ public:
         std::string sessionFilepath = "session.json",
         std::string baseUrl = "" );
 
-    void loadSession();
-    bool isLoggedIn() const;
+    void load_session();
+    bool is_logged_in() const;
     const std::string& username() const;
     const std::string& token() const;
 
-    AuthResult registerAndLogin(
+    AuthResult register_and_login(
         const std::string& username,
         const std::string& password );
     AuthResult login(
@@ -31,9 +44,9 @@ public:
 
     void logout();
 
-    bool submitScoreIfLoggedIn( int levelId, int score, int stars );
-    LeaderboardFetchResult fetchLeaderboardWithStatus( int levelId );
-    std::vector<LeaderboardEntry> fetchLeaderboard( int levelId );
+    bool submit_score_if_logged_in( int levelId, int score, int stars );
+    LeaderboardFetchResult fetch_leaderboard_with_status( int levelId );
+    std::vector<LeaderboardEntry> fetch_leaderboard( int levelId );
 
 private:
     SessionManager sessionManager_;

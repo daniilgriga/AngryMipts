@@ -1,3 +1,14 @@
+// ============================================================
+// OnlineScoreClient.cpp — Online score client implementation.
+// Part of: angry::data
+//
+// Implements network interactions with leaderboard backend:
+//   * Resolves backend URL from arg/env/default
+//   * Executes requests with retry on transient failures
+//   * Submits scores (legacy and JWT-authenticated variants)
+//   * Fetches/parses leaderboard data with status mapping
+// ============================================================
+
 #include "OnlineScoreClient.hpp"
 
 #include "logger.hpp"
@@ -14,6 +25,8 @@ namespace angry
 
 using json = nlohmann::json;
 
+// #=# Local Helpers & Constants #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -28,7 +41,7 @@ constexpr int kBackendRetryDelayMs = 220;
 constexpr const char* kDefaultBackendUrl = "http://84.201.138.107:8080";
 constexpr const char* kBackendUrlEnvVar = "ANGRY_BACKEND_URL";
 
-std::string resolveBackendUrl( std::string baseUrl )
+std::string resolve_backend_url( std::string baseUrl )
 {
     if ( !baseUrl.empty() )
     {
@@ -44,7 +57,7 @@ std::string resolveBackendUrl( std::string baseUrl )
     return std::string( kDefaultBackendUrl );
 }
 
-bool shouldRetryRequest( const platform::http::Response& response )
+bool should_retry_request( const platform::http::Response& response )
 {
     if ( response.network_error )
     {
@@ -58,7 +71,7 @@ bool shouldRetryRequest( const platform::http::Response& response )
 }
 
 template <typename RequestFn>
-platform::http::Response performRequestWithRetry( const char* opName, RequestFn&& requestFn )
+platform::http::Response perform_request_with_retry( const char* opName, RequestFn&& requestFn )
 {
     platform::http::Response response;
 
@@ -73,7 +86,7 @@ platform::http::Response performRequestWithRetry( const char* opName, RequestFn&
             return response;
         }
 
-        const bool canRetry = attempt < kBackendMaxAttempts && shouldRetryRequest( response );
+        const bool canRetry = attempt < kBackendMaxAttempts && should_retry_request( response );
         if ( response.network_error )
         {
             Logger::error(
@@ -109,8 +122,10 @@ platform::http::Response performRequestWithRetry( const char* opName, RequestFn&
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
-    : baseUrl_( resolveBackendUrl( std::move( baseUrl ) ) )
+    : baseUrl_( resolve_backend_url( std::move( baseUrl ) ) )
 {
     static std::once_flag logBackendUrlOnce;
     std::call_once(
@@ -121,15 +136,17 @@ OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
         } );
 }
 
-bool OnlineScoreClient::submitScore(
+// #=# Score Submission API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+bool OnlineScoreClient::submit_score(
     const std::string& playerName,
     int levelId,
     int score,
     int stars)
 {
     Logger::info(
-        "OnlineScoreClient::submitScore(playerName, ...) is legacy. "
-        "Use submitScoreWithToken(token, ...) for JWT backend." );
+        "OnlineScoreClient::submit_score(playerName, ...) is legacy. "
+        "Use submit_score_with_token(token, ...) for JWT backend." );
     Logger::info( "Submitting score to backend..." );
 
     const json body = {
@@ -139,8 +156,8 @@ bool OnlineScoreClient::submitScore(
         {"stars", stars},
     };
 
-    const platform::http::Response response = performRequestWithRetry(
-        "submitScore",
+    const platform::http::Response response = perform_request_with_retry(
+        "submit_score",
         [&]()
         {
             return platform::http::post(
@@ -154,23 +171,23 @@ bool OnlineScoreClient::submitScore(
 
     if ( response.network_error )
     {
-        Logger::error( "OnlineScoreClient::submitScore failed after retries." );
+        Logger::error( "OnlineScoreClient::submit_score failed after retries." );
         return false;
     }
 
     if ( !platform::http::is_http_ok( response ) )
     {
         Logger::error(
-            "OnlineScoreClient::submitScore failed: final http status={}",
+            "OnlineScoreClient::submit_score failed: final http status={}",
             response.status_code );
         return false;
     }
 
-    Logger::info( "OnlineScoreClient::submitScore success." );
+    Logger::info( "OnlineScoreClient::submit_score success." );
     return true;
 }
 
-bool OnlineScoreClient::submitScoreWithToken(
+bool OnlineScoreClient::submit_score_with_token(
     const std::string& token,
     int levelId,
     int score,
@@ -190,8 +207,8 @@ bool OnlineScoreClient::submitScoreWithToken(
         {"stars", stars},
     };
 
-    const platform::http::Response response = performRequestWithRetry(
-        "submitScoreWithToken",
+    const platform::http::Response response = perform_request_with_retry(
+        "submit_score_with_token",
         [&]()
         {
             return platform::http::post(
@@ -206,28 +223,30 @@ bool OnlineScoreClient::submitScoreWithToken(
 
     if ( response.network_error )
     {
-        Logger::error( "OnlineScoreClient::submitScoreWithToken failed after retries." );
+        Logger::error( "OnlineScoreClient::submit_score_with_token failed after retries." );
         return false;
     }
 
     if ( !platform::http::is_http_ok( response ) )
     {
         Logger::error(
-            "OnlineScoreClient::submitScoreWithToken failed: final http status={}",
+            "OnlineScoreClient::submit_score_with_token failed: final http status={}",
             response.status_code );
         return false;
     }
 
-    Logger::info( "OnlineScoreClient::submitScoreWithToken success." );
+    Logger::info( "OnlineScoreClient::submit_score_with_token success." );
     return true;
 }
 
-LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId)
+// #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int levelId)
 {
     LeaderboardFetchResult result;
 
-    const platform::http::Response response = performRequestWithRetry(
-        "fetchLeaderboard",
+    const platform::http::Response response = perform_request_with_retry(
+        "fetch_leaderboard",
         [&]()
         {
             return platform::http::get(
@@ -241,7 +260,7 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
 
     if ( response.network_error )
     {
-        Logger::error( "OnlineScoreClient::fetchLeaderboard failed after retries." );
+        Logger::error( "OnlineScoreClient::fetch_leaderboard failed after retries." );
         result.status = LeaderboardFetchStatus::Unavailable;
         return result;
     }
@@ -249,7 +268,7 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
     if ( !platform::http::is_http_ok( response ) )
     {
         Logger::error(
-            "OnlineScoreClient::fetchLeaderboard failed: final http status={}",
+            "OnlineScoreClient::fetch_leaderboard failed: final http status={}",
             response.status_code );
         result.status = LeaderboardFetchStatus::Unavailable;
         return result;
@@ -258,7 +277,7 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
     const json data = json::parse( response.body, nullptr, false );
     if ( data.is_discarded() )
     {
-        Logger::error( "OnlineScoreClient::fetchLeaderboard failed: invalid JSON payload." );
+        Logger::error( "OnlineScoreClient::fetch_leaderboard failed: invalid JSON payload." );
         result.status = LeaderboardFetchStatus::InvalidResponse;
         return result;
     }
@@ -271,7 +290,7 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
 
     if ( !data.is_array() )
     {
-        Logger::error( "OnlineScoreClient::fetchLeaderboard failed: expected JSON array." );
+        Logger::error( "OnlineScoreClient::fetch_leaderboard failed: expected JSON array." );
         result.status = LeaderboardFetchStatus::InvalidResponse;
         return result;
     }
@@ -282,7 +301,7 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
         if ( !item.is_object() )
         {
             Logger::info(
-                "OnlineScoreClient::fetchLeaderboard: skipped non-object leaderboard item." );
+                "OnlineScoreClient::fetch_leaderboard: skipped non-object leaderboard item." );
             continue;
         }
 
@@ -300,9 +319,9 @@ LeaderboardFetchResult OnlineScoreClient::fetchLeaderboardWithStatus(int levelId
     return result;
 }
 
-std::vector<LeaderboardEntry> OnlineScoreClient::fetchLeaderboard(int levelId)
+std::vector<LeaderboardEntry> OnlineScoreClient::fetch_leaderboard(int levelId)
 {
-    return fetchLeaderboardWithStatus( levelId ).entries;
+    return fetch_leaderboard_with_status( levelId ).entries;
 }
 
 }  // namespace angry

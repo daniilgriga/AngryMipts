@@ -1,3 +1,14 @@
+// ============================================================
+// renderer.cpp — World/HUD rendering implementation.
+// Part of: angry::render
+//
+// Implements translation from WorldSnapshot to draw commands:
+//   * Background, slingshot, objects, and overlays
+//   * Material/projectile tinting and health-based effects
+//   * HUD rendering for score and projectile state
+//   * Geometry helpers for rotated and shaped objects
+// ============================================================
+
 #include "render/renderer.hpp"
 #include "shared/world_config.hpp"
 

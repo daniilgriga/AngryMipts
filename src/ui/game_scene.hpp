@@ -1,3 +1,14 @@
+// ============================================================
+// game_scene.hpp — Main gameplay scene interface.
+// Part of: angry::ui
+//
+// Declares the central in-level scene that:
+//   * Integrates physics runtime, renderer, and slingshot input
+//   * Coordinates score saving and online leaderboard sync
+//   * Tracks transient gameplay VFX/SFX state
+//   * Produces LevelResult for transition to result scene
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "data/level_loader.hpp"
@@ -26,6 +37,8 @@
 namespace angry
 {
 
+// Owns gameplay loop orchestration between input, physics,
+// rendering, effects, and result transition state.
 class GameScene : public Scene
 {
 private:

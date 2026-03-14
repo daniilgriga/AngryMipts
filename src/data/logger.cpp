@@ -1,3 +1,14 @@
+// ============================================================
+// logger.cpp — Timestamped logging sink implementation.
+// Part of: angry::data
+//
+// Implements process-wide logger behavior:
+//   * Produces local timestamp for each log message
+//   * Serializes concurrent writes via global mutex
+//   * Routes INFO to clog and ERROR to cerr
+//   * Supports Logger public API from logger.hpp
+// ============================================================
+
 #include "data/logger.hpp"
 
 #include <chrono>
@@ -9,6 +20,9 @@
 
 namespace angry
 {
+
+// #=# Local Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -31,6 +45,8 @@ std::string currentTimeStamp()
 }
 
 }  // namespace
+
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void Logger::info( const std::string& message )
 {

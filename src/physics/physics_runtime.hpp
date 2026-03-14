@@ -1,3 +1,14 @@
+// ============================================================
+// physics_runtime.hpp — Physics mode facade interface.
+// Part of: angry::physics
+//
+// Declares a thin runtime wrapper that:
+//   * Chooses single-threaded or threaded physics backend
+//   * Keeps one stable API for UI/game loop code
+//   * Forwards commands, stepping, snapshots, and events
+//   * Hides backend-specific ownership/lifecycle details
+// ============================================================
+
 #pragma once
 
 #include "physics_engine.hpp"
@@ -20,27 +31,28 @@ enum class PhysicsMode
     Threaded,
 };
 
-// Facade that keeps a stable API while allowing either single-thread or threaded physics backend.
+// Keeps one physics-facing API while internally switching
+// between direct PhysicsEngine and worker-thread backend.
 class PhysicsRuntime
 {
 public:
     explicit PhysicsRuntime(PhysicsMode mode = PhysicsMode::SingleThread);
     ~PhysicsRuntime();
 
-    void registerLevel(const LevelData& level);
-    void loadLevel(const LevelData& level);
-    void processCommands(ThreadSafeQueue<Command>& cmdQueue);
+    void register_level(const LevelData& level);
+    void load_level(const LevelData& level);
+    void process_commands(ThreadSafeQueue<Command>& cmdQueue);
     void step(float dt);
 
-    WorldSnapshot getSnapshot() const;
-    std::vector<Event> drainEvents();
+    WorldSnapshot get_snapshot() const;
+    std::vector<Event> drain_events();
 
     PhysicsMode mode() const;
 
 private:
     PhysicsMode mode_ = PhysicsMode::SingleThread;
-    PhysicsEngine singleEngine_;
-    PhysicsThread threadedEngine_;
+    PhysicsEngine single_engine_;
+    PhysicsThread threaded_engine_;
 };
 
 }  // namespace angry

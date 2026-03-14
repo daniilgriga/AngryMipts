@@ -1,3 +1,14 @@
+// ============================================================
+// menu_scene.hpp — Main menu scene interface.
+// Part of: angry::ui
+//
+// Declares entry menu scene used before level selection:
+//   * Renders title and primary navigation prompt
+//   * Shows account badge/login status shortcut
+//   * Handles click/keyboard transition events
+//   * Keeps simple static UI state and hit regions
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "scene.hpp"
@@ -5,6 +16,8 @@
 namespace angry
 {
 
+// Displays top-level menu actions and forwards navigation
+// choices to SceneManager.
 class MenuScene : public Scene
 {
 private:
