@@ -739,7 +739,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     {
         const std::string path = resolveLevelPath ( level_id );
         const LevelData level = level_loader_.load ( path );
-        physics_.registerLevel ( level );
+        physics_.register_level ( level );
         physics_.loadLevel ( level );
         if ( physics_.mode() == PhysicsMode::Threaded )
         {
@@ -750,7 +750,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
         }
         else
         {
-            snapshot_ = physics_.getSnapshot();
+            snapshot_ = physics_.get_snapshot();
         }
         frame_clock_.restart();
         Logger::info ( "GameScene: loaded level {}", level_id );
@@ -925,7 +925,7 @@ bool GameScene::poll_result_update()
 
 void GameScene::process_events()
 {
-    auto fresh_events = physics_.drainEvents();
+    auto fresh_events = physics_.drain_events();
     for ( auto& ev : fresh_events )
     {
         pending_events_.push_back ( std::move ( ev ) );
@@ -1418,9 +1418,9 @@ void GameScene::update()
 
     particles_.update ( dt );
 
-    physics_.processCommands ( command_queue_ );
+    physics_.process_commands ( command_queue_ );
     physics_.step ( dt );
-    const WorldSnapshot new_snap = physics_.getSnapshot();
+    const WorldSnapshot new_snap = physics_.get_snapshot();
     // Discard stale Win/Lose snapshots from the previous level until physics
     // confirms the new level is Running.
     if ( !snapshot_ready_ )

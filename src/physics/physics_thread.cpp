@@ -77,13 +77,13 @@ void PhysicsThread::stop()
     clearQueue(eventQueue_);
 }
 
-bool PhysicsThread::isRunning() const
+bool PhysicsThread::is_running() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return running_;
 }
 
-void PhysicsThread::registerLevel(const LevelData& level)
+void PhysicsThread::register_level(const LevelData& level)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     engine_.register_level(level);
@@ -105,31 +105,31 @@ void PhysicsThread::loadLevel(const LevelData& level)
     }
 }
 
-void PhysicsThread::loadLevelById(int levelId)
+void PhysicsThread::load_level_by_id(int levelId)
 {
     commandQueue_.push(LoadLevelCmd{levelId});
 }
 
-void PhysicsThread::restartLevel(int levelId)
+void PhysicsThread::restart_level(int levelId)
 {
     commandQueue_.push(RestartCmd{levelId});
 }
 
-void PhysicsThread::setPaused(bool paused)
+void PhysicsThread::set_paused(bool paused)
 {
     commandQueue_.push(PauseCmd{paused});
 }
 
-void PhysicsThread::pushCommand(const Command& cmd)
+void PhysicsThread::push_command(const Command& cmd)
 {
     commandQueue_.push(cmd);
 }
 
 // #=# Single-Thread Adapter #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-void PhysicsThread::tickSingleThread(float dt)
+void PhysicsThread::tick_single_thread(float dt)
 {
-    if (isRunning())
+    if (is_running())
     {
         return;
     }
@@ -148,14 +148,14 @@ void PhysicsThread::tickSingleThread(float dt)
 
 // #=# Snapshot / Events API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-WorldSnapshot PhysicsThread::readSnapshot() const
+WorldSnapshot PhysicsThread::read_snapshot() const
 {
     std::lock_guard<std::mutex> lock(snapshotMutex_);
     const int front = frontSnapshotIndex_.load(std::memory_order_acquire);
     return snapshots_[static_cast<size_t>(front)];
 }
 
-std::vector<Event> PhysicsThread::drainEvents()
+std::vector<Event> PhysicsThread::drain_events()
 {
     std::vector<Event> events;
     while (const std::optional<Event> event = eventQueue_.try_pop())

@@ -40,20 +40,20 @@ public:
 
     void start();
     void stop();
-    bool isRunning() const;
+    bool is_running() const;
 
-    void registerLevel(const LevelData& level);
+    void register_level(const LevelData& level);
     void loadLevel(const LevelData& level);
-    void loadLevelById(int levelId);
-    void restartLevel(int levelId);
-    void setPaused(bool paused);
-    void pushCommand(const Command& cmd);
+    void load_level_by_id(int levelId);
+    void restart_level(int levelId);
+    void set_paused(bool paused);
+    void push_command(const Command& cmd);
 
     // Temporary adapter for single-thread integration while worker loop is not introduced yet.
-    void tickSingleThread(float dt);
+    void tick_single_thread(float dt);
 
-    WorldSnapshot readSnapshot() const;
-    std::vector<Event> drainEvents();
+    WorldSnapshot read_snapshot() const;
+    std::vector<Event> drain_events();
 
 private:
     void workerLoop();

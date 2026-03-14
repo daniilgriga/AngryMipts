@@ -39,13 +39,13 @@ public:
     explicit PhysicsRuntime(PhysicsMode mode = PhysicsMode::SingleThread);
     ~PhysicsRuntime();
 
-    void registerLevel(const LevelData& level);
+    void register_level(const LevelData& level);
     void loadLevel(const LevelData& level);
-    void processCommands(ThreadSafeQueue<Command>& cmdQueue);
+    void process_commands(ThreadSafeQueue<Command>& cmdQueue);
     void step(float dt);
 
-    WorldSnapshot getSnapshot() const;
-    std::vector<Event> drainEvents();
+    WorldSnapshot get_snapshot() const;
+    std::vector<Event> drain_events();
 
     PhysicsMode mode() const;
 

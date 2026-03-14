@@ -35,11 +35,11 @@ PhysicsRuntime::~PhysicsRuntime()
 
 // #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-void PhysicsRuntime::registerLevel(const LevelData& level)
+void PhysicsRuntime::register_level(const LevelData& level)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        threadedEngine_.registerLevel(level);
+        threadedEngine_.register_level(level);
         return;
     }
 
@@ -57,13 +57,13 @@ void PhysicsRuntime::loadLevel(const LevelData& level)
     singleEngine_.load_level(level);
 }
 
-void PhysicsRuntime::processCommands(ThreadSafeQueue<Command>& cmdQueue)
+void PhysicsRuntime::process_commands(ThreadSafeQueue<Command>& cmdQueue)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
         while (const std::optional<Command> cmd = cmdQueue.try_pop())
         {
-            threadedEngine_.pushCommand(*cmd);
+            threadedEngine_.push_command(*cmd);
         }
         return;
     }
@@ -83,21 +83,21 @@ void PhysicsRuntime::step(float dt)
     singleEngine_.step(dt);
 }
 
-WorldSnapshot PhysicsRuntime::getSnapshot() const
+WorldSnapshot PhysicsRuntime::get_snapshot() const
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        return threadedEngine_.readSnapshot();
+        return threadedEngine_.read_snapshot();
     }
 
     return singleEngine_.get_snapshot();
 }
 
-std::vector<Event> PhysicsRuntime::drainEvents()
+std::vector<Event> PhysicsRuntime::drain_events()
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        return threadedEngine_.drainEvents();
+        return threadedEngine_.drain_events();
     }
 
     return singleEngine_.drain_events();
