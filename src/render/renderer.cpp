@@ -83,6 +83,8 @@ void draw_hill ( platform::RenderTarget& target, float cx, float base_y,
                  float width, float height, platform::Color color );
 void draw_cloud ( platform::RenderTarget& target, float x, float y, float scale );
 
+// #=# HUD Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void Renderer::draw_hud ( platform::RenderTarget& target, const WorldSnapshot& snapshot,
                           platform::Text& score_text )
 {
@@ -233,6 +235,8 @@ void Renderer::draw_hud ( platform::RenderTarget& target, const WorldSnapshot& s
         target.draw ( spent );
     }
 }
+
+// #=# World Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void Renderer::draw_snapshot ( platform::RenderTarget& target, const WorldSnapshot& snapshot )
 {
@@ -417,6 +421,8 @@ static platform::Color static_tint ( platform::Color c )
         static_cast<uint8_t> ( c.b * 0.55f ),
         c.a );
 }
+
+// #=# Object Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void Renderer::draw_object ( platform::RenderTarget& target, const ObjectSnapshot& obj )
 {
@@ -636,6 +642,8 @@ const platform::Texture& Renderer::projectile_texture ( ProjectileType type )
     return textures_.projectile ( type );
 }
 
+// #=# Slingshot Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void Renderer::draw_slingshot ( platform::RenderTarget& target, const SlingshotState& sling )
 {
     const platform::Texture& wood = textures_.slingshot_wood();
@@ -656,6 +664,8 @@ void Renderer::draw_slingshot ( platform::RenderTarget& target, const SlingshotS
     draw_piece ( {sling.basePx.x - 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
     draw_piece ( {sling.basePx.x + 10.f, sling.basePx.y - 54.f}, {8.f, 26.f} );
 }
+
+// #=# Damage Overlay #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void Renderer::draw_damage_overlay ( platform::RenderTarget& target, const ObjectSnapshot& obj )
 {
@@ -770,6 +780,8 @@ void Renderer::draw_damage_overlay ( platform::RenderTarget& target, const Objec
 
     target.draw ( crack_lines );
 }
+
+// #=# Color Palettes #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 platform::Color Renderer::material_color ( Material mat )
 {
