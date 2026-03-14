@@ -33,6 +33,24 @@ constexpr int kAuthTimeoutMs = 3000;
 constexpr const char* kDefaultBackendUrl = "http://84.201.138.107:8080";
 constexpr const char* kBackendUrlEnvVar = "ANGRY_BACKEND_URL";
 
+bool starts_with( const std::string& value, const char* prefix )
+{
+    const std::size_t prefix_len = std::char_traits<char>::length( prefix );
+    return value.size() >= prefix_len && value.compare( 0, prefix_len, prefix ) == 0;
+}
+
+bool is_local_http_url( const std::string& url )
+{
+    return starts_with( url, "http://127.0.0.1" )
+        || starts_with( url, "http://localhost" )
+        || starts_with( url, "http://[::1]" );
+}
+
+bool is_insecure_non_local_url( const std::string& url )
+{
+    return starts_with( url, "http://" ) && !is_local_http_url( url );
+}
+
 std::string resolve_backend_url( std::string baseUrl )
 {
     if ( !baseUrl.empty() )
@@ -88,6 +106,14 @@ AuthResult post_auth_request(
     const std::string& username,
     const std::string& password )
 {
+    AuthResult result;
+    if ( is_insecure_non_local_url( baseUrl ) )
+    {
+        result.errorMessage =
+            "insecure backend URL: use HTTPS (localhost is allowed for dev)";
+        return result;
+    }
+
     const Json body = {
         {"username", username},
         {"password", password},
@@ -100,8 +126,6 @@ AuthResult post_auth_request(
             {"Content-Type", "application/json"},
         },
         kAuthTimeoutMs );
-
-    AuthResult result;
 
     if ( response.network_error )
     {
@@ -134,6 +158,15 @@ AuthResult AuthClient::register_user(
     const std::string& username,
     const std::string& password ) const
 {
+    if ( is_insecure_non_local_url( baseUrl_ ) )
+    {
+        Logger::error( "Register blocked: insecure backend URL '{}'", baseUrl_ );
+        AuthResult blocked;
+        blocked.errorMessage =
+            "insecure backend URL: use HTTPS (localhost is allowed for dev)";
+        return blocked;
+    }
+
     Logger::info( "Register request started" );
 
     AuthResult result = post_auth_request( "/register", baseUrl_, username, password );
@@ -152,6 +185,15 @@ AuthResult AuthClient::login_user(
     const std::string& username,
     const std::string& password ) const
 {
+    if ( is_insecure_non_local_url( baseUrl_ ) )
+    {
+        Logger::error( "Login blocked: insecure backend URL '{}'", baseUrl_ );
+        AuthResult blocked;
+        blocked.errorMessage =
+            "insecure backend URL: use HTTPS (localhost is allowed for dev)";
+        return blocked;
+    }
+
     Logger::info( "Login request started" );
 
     const Json body = {
