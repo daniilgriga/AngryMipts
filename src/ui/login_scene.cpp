@@ -1,3 +1,14 @@
+// ============================================================
+// login_scene.cpp — Login/registration scene implementation.
+// Part of: angry::ui
+//
+// Implements account entry user interactions:
+//   * Captures username/password input and focus changes
+//   * Executes login/register actions through AccountService
+//   * Renders animated background and form widgets
+//   * Emits scene transitions after auth actions
+// ============================================================
+
 #include "ui/login_scene.hpp"
 
 #ifndef __EMSCRIPTEN__

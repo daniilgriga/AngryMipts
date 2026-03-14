@@ -1,3 +1,14 @@
+// ============================================================
+// level_select_scene.cpp — Level selection scene implementation.
+// Part of: angry::ui
+//
+// Implements interactive level-browser behavior:
+//   * Loads and displays level metadata and local best scores
+//   * Requests leaderboard previews asynchronously
+//   * Handles keyboard/mouse selection and scrolling
+//   * Produces selected level id for scene transitions
+// ============================================================
+
 #include "ui/level_select_scene.hpp"
 
 #include "data/logger.hpp"

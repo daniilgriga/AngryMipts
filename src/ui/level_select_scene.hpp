@@ -1,3 +1,14 @@
+// ============================================================
+// level_select_scene.hpp — Level selection scene interface.
+// Part of: angry::ui
+//
+// Declares UI scene for choosing and previewing levels:
+//   * Loads level metadata and local progress summaries
+//   * Shows leaderboard previews from account service
+//   * Handles keyboard/mouse navigation and scrolling
+//   * Exposes selected level id for game scene launch
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "data/level_loader.hpp"
@@ -13,6 +24,8 @@
 namespace angry
 {
 
+// Renders and controls interactive level list with progress and
+// leaderboard preview panels.
 class LevelSelectScene : public Scene
 {
 private:

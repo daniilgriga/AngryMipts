@@ -1,3 +1,14 @@
+// ============================================================
+// login_scene.hpp — Login/registration scene interface.
+// Part of: angry::ui
+//
+// Declares authentication UI scene behavior:
+//   * Handles username/password text input and focus
+//   * Triggers login and registration via AccountService
+//   * Displays status/error/success messages
+//   * Returns navigation decisions to SceneManager
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "scene.hpp"
@@ -7,6 +18,8 @@
 namespace angry
 {
 
+// Provides account entry UI with form controls and status text
+// for login/registration workflows.
 class LoginScene : public Scene
 {
 public:

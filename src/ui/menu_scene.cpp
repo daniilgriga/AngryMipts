@@ -1,3 +1,14 @@
+// ============================================================
+// menu_scene.cpp — Main menu scene implementation.
+// Part of: angry::ui
+//
+// Implements top-level menu behavior:
+//   * Renders title/prompt and account badge controls
+//   * Handles pointer/keyboard navigation events
+//   * Produces scene transitions to login/level select
+//   * Keeps visual menu state and hit regions
+// ============================================================
+
 #include "ui/menu_scene.hpp"
 
 #ifndef __EMSCRIPTEN__
