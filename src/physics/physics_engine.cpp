@@ -328,8 +328,8 @@ inline StarThresholds build_star_thresholds(const LevelData& level)
 {
     StarThresholds thresholds;
     thresholds.one = std::max(1, sum_target_score(level));
-    thresholds.two = std::max(level.meta.star2Threshold, thresholds.one + 1);
-    thresholds.three = std::max(level.meta.star3Threshold, thresholds.two + 1);
+    thresholds.two = std::max(level.meta.star_2_threshold, thresholds.one + 1);
+    thresholds.three = std::max(level.meta.star_3_threshold, thresholds.two + 1);
     return thresholds;
 }
 
@@ -339,7 +339,7 @@ inline int calculate_stars_for_result(
     LevelStatus status)
 {
     const StarThresholds thresholds = build_star_thresholds(level);
-    int stars = scoreSystem.starsFor(thresholds.one, thresholds.two, thresholds.three);
+    int stars = scoreSystem.stars_for(thresholds.one, thresholds.two, thresholds.three);
 
     if (status == LevelStatus::Win)
     {

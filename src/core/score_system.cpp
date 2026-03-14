@@ -34,17 +34,17 @@ int ScoreSystem::score() const
     return score_;
 }
 
-int ScoreSystem::starsFor(int star1Threshold, int star2Threshold, int star3Threshold) const
+int ScoreSystem::stars_for(int star_1_threshold, int star_2_threshold, int star_3_threshold) const
 {
-    if (score_ >= star3Threshold)
+    if (score_ >= star_3_threshold)
     {
         return 3;
     }
-    if (score_ >= star2Threshold)
+    if (score_ >= star_2_threshold)
     {
         return 2;
     }
-    if (score_ >= star1Threshold)
+    if (score_ >= star_1_threshold)
     {
         return 1;
     }
