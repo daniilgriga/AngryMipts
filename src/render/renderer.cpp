@@ -443,22 +443,32 @@ void Renderer::draw_object ( platform::RenderTarget& target, const ObjectSnapsho
     // --- Triangle blocks ---
     if ( is_triangle )
     {
-        // Physics triangle: bottom-left, bottom-right, top-center
-        const float hw = obj.sizePx.x * 0.5f;
-        const float hh = obj.sizePx.y * 0.5f;
-
         const platform::Texture& tex = textures_.block ( obj.material );
         const platform::Vec2u ts = tex.getSize();
 
         platform::ConvexShape tri ( 3 );
-        tri.setPoint ( 0, {-hw,  hh} );
-        tri.setPoint ( 1, { hw,  hh} );
-        tri.setPoint ( 2, {  0, -hh} );
+
+        if ( obj.triangleLocalVerticesPx.size() == 3 )
+        {
+            // Use exact geometry from physics (via snapshot)
+            tri.setPoint ( 0, {obj.triangleLocalVerticesPx[0].x, obj.triangleLocalVerticesPx[0].y} );
+            tri.setPoint ( 1, {obj.triangleLocalVerticesPx[1].x, obj.triangleLocalVerticesPx[1].y} );
+            tri.setPoint ( 2, {obj.triangleLocalVerticesPx[2].x, obj.triangleLocalVerticesPx[2].y} );
+        }
+        else
+        {
+            // Legacy fallback: isosceles triangle from bounding box
+            const float hw = obj.sizePx.x * 0.5f;
+            const float hh = obj.sizePx.y * 0.5f;
+            tri.setPoint ( 0, {-hw,  hh} );
+            tri.setPoint ( 1, { hw,  hh} );
+            tri.setPoint ( 2, {  0, -hh} );
+        }
+
         tri.setOrigin ( {0.f, 0.f} );
         tri.setPosition ( {obj.positionPx.x, obj.positionPx.y} );
         tri.setRotation ( sf::degrees ( obj.angleDeg ) );
         tri.setTexture ( &tex );
-        // Map texture corners to triangle vertices
         tri.setTextureRect ( sf::IntRect ( {0, 0},
             {static_cast<int> ( ts.x ), static_cast<int> ( ts.y )} ) );
 
