@@ -1,3 +1,14 @@
+// ============================================================
+// account_service_tests.cpp — AccountService unit tests.
+// Part of: angry::tests
+//
+// Covers account facade behavior:
+//   * Session bootstrap from persisted file
+//   * Logout side effects on file and in-memory state
+//   * Auth-failure invariants for token persistence
+//   * Network-independent service expectations
+// ============================================================
+
 #include "data/account_service.hpp"
 
 #include <gtest/gtest.h>
@@ -9,6 +20,8 @@
 
 namespace
 {
+
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 std::filesystem::path makeTempSessionPath()
 {
@@ -46,6 +59,8 @@ private:
 };
 
 }  // namespace
+
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 TEST( AccountService, LoadSessionExposesLoggedInState )
 {
@@ -106,4 +121,3 @@ TEST( AccountService, LoginServerUnavailableDoesNotPersistSession )
     EXPECT_FALSE( service.isLoggedIn() );
     EXPECT_FALSE( std::filesystem::exists( temp.path() ) );
 }
-

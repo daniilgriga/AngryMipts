@@ -1,3 +1,14 @@
+// ============================================================
+// physics_engine_tests.cpp — PhysicsEngine behavior tests.
+// Part of: angry::tests
+//
+// Verifies core simulation contract invariants:
+//   * Win/lose status and star computation rules
+//   * Score assignment and event emission behavior
+//   * Projectile/block impact and carry-through behavior
+//   * Triangle snapshot and ability-activation coverage
+// ============================================================
+
 #include "physics/physics_engine.hpp"
 #include "shared/command.hpp"
 #include "shared/event.hpp"
@@ -15,6 +26,8 @@
 
 namespace
 {
+
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 using angry::AbilityActivatedEvent;
 using angry::ActivateAbilityCmd;
@@ -119,6 +132,8 @@ const ObjectSnapshot* findFirstActiveProjectile( const angry::WorldSnapshot& sna
 }
 
 }  // namespace
+
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 TEST( PhysicsEngineStatus, WinOnlyWhenNoAliveTargets )
 {

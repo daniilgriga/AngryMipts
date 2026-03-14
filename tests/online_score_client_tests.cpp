@@ -1,3 +1,14 @@
+// ============================================================
+// online_score_client_tests.cpp — OnlineScoreClient tests.
+// Part of: angry::tests
+//
+// Verifies leaderboard/score client behavior:
+//   * Score submission success/failure handling
+//   * Retry behavior on transient failures
+//   * Leaderboard JSON parsing and status mapping
+//   * Token/non-token request path expectations
+// ============================================================
+
 #include "data/OnlineScoreClient.hpp"
 
 #include <gtest/gtest.h>
@@ -18,6 +29,8 @@
 
 namespace
 {
+
+// #=# Test Helpers & Mock Server #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool canBindLoopbackSocket()
 {
@@ -214,6 +227,8 @@ private:
 };
 
 }  // namespace
+
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 TEST( OnlineScoreClient, SubmitScoreReturnsTrueOn2xx )
 {

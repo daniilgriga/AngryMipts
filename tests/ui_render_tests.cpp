@@ -1,3 +1,14 @@
+// ============================================================
+// ui_render_tests.cpp — UI/render helper unit tests.
+// Part of: angry::tests
+//
+// Verifies rendering-adjacent utility behavior:
+//   * Letterbox viewport calculations for aspect handling
+//   * Particle system frame/hard-cap constraints
+//   * Particle lifetime expiration behavior
+//   * Non-GPU deterministic helper expectations
+// ============================================================
+
 #include "render/particles.hpp"
 #include "shared/world_config.hpp"
 #include "ui/view_utils.hpp"
@@ -8,10 +19,14 @@
 #include <cmath>
 #include <cstdlib>
 
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 bool almost_equal ( float a, float b, float eps = 1e-4f )
 {
     return std::fabs ( a - b ) <= eps;
 }
+
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 TEST ( LetterboxView, EqualAspectUsesFullViewport )
 {

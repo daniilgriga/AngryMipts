@@ -1,3 +1,14 @@
+// ============================================================
+// session_manager_tests.cpp — SessionManager unit tests.
+// Part of: angry::tests
+//
+// Verifies persistent session management behavior:
+//   * Save/load roundtrip for token and username
+//   * Missing file and malformed JSON handling
+//   * Logout/clear semantics for session storage
+//   * In-memory state invariants after operations
+// ============================================================
+
 #include "data/session_manager.hpp"
 
 #include <gtest/gtest.h>
@@ -9,6 +20,8 @@
 
 namespace
 {
+
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 std::filesystem::path makeTempSessionPath()
 {
@@ -46,6 +59,8 @@ private:
 };
 
 }  // namespace
+
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 TEST( SessionManager, SaveThenLoadRestoresSession )
 {
@@ -109,4 +124,3 @@ TEST( SessionManager, ClearSessionRemovesFileAndState )
     EXPECT_TRUE( sm.token().empty() );
     EXPECT_TRUE( sm.username().empty() );
 }
-

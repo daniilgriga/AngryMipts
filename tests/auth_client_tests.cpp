@@ -1,3 +1,14 @@
+// ============================================================
+// auth_client_tests.cpp — AuthClient unit tests.
+// Part of: angry::tests
+//
+// Verifies authentication HTTP client behavior:
+//   * Register and login success/error handling
+//   * Response parsing and validation constraints
+//   * Network and HTTP failure mapping
+//   * Backend URL resolution in test harness
+// ============================================================
+
 #include "data/auth_client.hpp"
 
 #include <gtest/gtest.h>
@@ -17,6 +28,8 @@
 
 namespace
 {
+
+// #=# Test Helpers & Mock Server #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 bool canBindLoopbackSocket()
 {
@@ -171,6 +184,8 @@ private:
 
 }  // namespace
 
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 TEST( AuthClient, RegisterSuccessReturnsPositiveResult )
 {
     if ( !canBindLoopbackSocket() )
@@ -235,4 +250,3 @@ TEST( AuthClient, LoginServerUnavailableFailsGracefully )
     EXPECT_TRUE( result.username.empty() );
     EXPECT_FALSE( result.errorMessage.empty() );
 }
-
