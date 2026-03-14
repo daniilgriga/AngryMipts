@@ -824,9 +824,11 @@ void GameScene::finish_level()
                     if ( won_value )
                     {
                         Logger::info (
-                            "GameScene: submitting score levelId={} score={} stars={} token={}",
-                            level_id, score_value, stars_value,
-                            auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
+                            "GameScene: submitting score levelId={} score={} stars={} auth={}",
+                            level_id,
+                            score_value,
+                            stars_value,
+                            auth_token.empty() ? "guest" : "logged-in" );
                         const bool submit_ok = client.submit_score_with_token (
                             auth_token, level_id, score_value, stars_value );
                         if ( !submit_ok )
@@ -862,44 +864,79 @@ void GameScene::finish_level()
                 }
             } ).detach();
 #else
-        // Web: no worker threads, so run backend sync inline.
-        try
-        {
-            LeaderboardFetchResult fetch_result;
+        const std::uint64_t token = ++leaderboard_request_token_;
+        pending_result_token_ = token;
+        const std::shared_ptr<LeaderboardAsyncState> async_state = leaderboard_async_state_;
+        const std::string auth_token = accounts_ ? accounts_->token() : std::string {};
+        const int level_id = level_id_;
+        const int score_value = score;
+        const int stars_value = stars;
+        const bool won_value = won;
 
-            if ( won )
+        auto publish_result =
+            [async_state, token, level_id] ( LeaderboardFetchResult fetch_result ) mutable
             {
-                const std::string auth_token = accounts_ ? accounts_->token() : std::string {};
-                Logger::info (
-                    "GameScene(web): submitting score levelId={} score={} stars={} token={}",
-                    level_id_, score, stars,
-                    auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
-                const bool submit_ok = online_score_client_.submit_score_with_token (
-                    auth_token, level_id_, score, stars );
-                if ( !submit_ok )
+                Logger::info ( "GameScene(web): leaderboard for levelId={} has {} entries, status={}",
+                               level_id,
+                               fetch_result.entries.size(),
+                               static_cast<int> ( fetch_result.status ) );
+                std::lock_guard<std::mutex> lock ( async_state->mutex );
+                if ( token >= async_state->ready_token )
                 {
-                    Logger::info ( "GameScene(web): backend submit failed, still fetching leaderboard" );
+                    async_state->ready_token = token;
+                    async_state->ready_entries = std::move ( fetch_result.entries );
+                    async_state->ready_status = fetch_result.status;
+                    async_state->ready = true;
                 }
-            }
+            };
 
-            Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id_ );
-            fetch_result = online_score_client_.fetch_leaderboard_with_status ( level_id_ );
-            Logger::info (
-                "GameScene(web): leaderboard for levelId={} has {} entries, status={}",
-                level_id_, fetch_result.entries.size(),
-                static_cast<int> ( fetch_result.status ) );
-
-            last_result_.leaderboard  = std::move ( fetch_result.entries );
-            last_result_.fetch_status = fetch_result.status;
-        }
-        catch ( const std::exception& e )
+        if ( won_value )
         {
-            Logger::error ( "GameScene(web): failed to sync leaderboard: {}", e.what() );
-            last_result_.leaderboard.clear();
-            last_result_.fetch_status = LeaderboardFetchStatus::Unavailable;
-        }
+            Logger::info (
+                "GameScene(web): submitting score levelId={} score={} stars={} auth={}",
+                level_id,
+                score_value,
+                stars_value,
+                auth_token.empty() ? "guest" : "logged-in" );
 
-        leaderboard_applied_ = true;
+            OnlineScoreClient client = online_score_client_;
+            client.submit_score_with_token_async (
+                auth_token,
+                level_id,
+                score_value,
+                stars_value,
+                [client = std::move ( client ),
+                 level_id,
+                 publish_result = std::move ( publish_result )] ( bool submit_ok ) mutable
+                {
+                    if ( !submit_ok )
+                    {
+                        Logger::info (
+                            "GameScene(web): backend submit failed, still fetching leaderboard" );
+                    }
+
+                    Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id );
+                    client.fetch_leaderboard_with_status_async (
+                        level_id,
+                        [publish_result = std::move ( publish_result )]
+                        ( LeaderboardFetchResult fetch_result ) mutable
+                        {
+                            publish_result ( std::move ( fetch_result ) );
+                        } );
+                } );
+        }
+        else
+        {
+            OnlineScoreClient client = online_score_client_;
+            Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id );
+            client.fetch_leaderboard_with_status_async (
+                level_id,
+                [publish_result = std::move ( publish_result )]
+                ( LeaderboardFetchResult fetch_result ) mutable
+                {
+                    publish_result ( std::move ( fetch_result ) );
+                } );
+        }
 #endif
     }
 
@@ -913,7 +950,6 @@ bool GameScene::poll_result_update()
     if ( leaderboard_applied_ || pending_result_token_ == 0 )
         return false;
 
-#ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock ( leaderboard_async_state_->mutex );
     if ( !leaderboard_async_state_->ready
          || leaderboard_async_state_->ready_token != pending_result_token_ )
@@ -925,9 +961,6 @@ bool GameScene::poll_result_update()
     last_result_.fetch_status  = leaderboard_async_state_->ready_status;
     leaderboard_applied_ = true;
     return true;
-#else
-    return false;
-#endif
 }
 
 void GameScene::process_events()

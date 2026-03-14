@@ -41,11 +41,29 @@ constexpr int kBackendRetryDelayMs = 220;
 constexpr const char* kDefaultBackendUrl = "http://84.201.138.107:8080";
 constexpr const char* kBackendUrlEnvVar = "ANGRY_BACKEND_URL";
 
-std::string resolve_backend_url( std::string baseUrl )
+bool starts_with( const std::string& value, const char* prefix )
 {
-    if ( !baseUrl.empty() )
+    const std::size_t prefix_len = std::char_traits<char>::length( prefix );
+    return value.size() >= prefix_len && value.compare( 0, prefix_len, prefix ) == 0;
+}
+
+bool is_local_http_url( const std::string& url )
+{
+    return starts_with( url, "http://127.0.0.1" )
+        || starts_with( url, "http://localhost" )
+        || starts_with( url, "http://[::1]" );
+}
+
+bool is_insecure_non_local_url( const std::string& url )
+{
+    return starts_with( url, "http://" ) && !is_local_http_url( url );
+}
+
+std::string resolve_backend_url( std::string base_url )
+{
+    if ( !base_url.empty() )
     {
-        return baseUrl;
+        return base_url;
     }
 
     const char* envUrl = std::getenv( kBackendUrlEnvVar );
@@ -120,143 +138,9 @@ platform::http::Response perform_request_with_retry( const char* opName, Request
     return response;
 }
 
-}  // namespace
-
-// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-
-OnlineScoreClient::OnlineScoreClient(std::string baseUrl)
-    : baseUrl_( resolve_backend_url( std::move( baseUrl ) ) )
-{
-    static std::once_flag logBackendUrlOnce;
-    std::call_once(
-        logBackendUrlOnce,
-        [this]()
-        {
-            Logger::info( "OnlineScoreClient backend URL: {}", baseUrl_ );
-        } );
-}
-
-// #=# Score Submission API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-
-bool OnlineScoreClient::submit_score(
-    const std::string& playerName,
-    int levelId,
-    int score,
-    int stars)
-{
-    Logger::info(
-        "OnlineScoreClient::submit_score(playerName, ...) is legacy. "
-        "Use submit_score_with_token(token, ...) for JWT backend." );
-    Logger::info( "Submitting score to backend..." );
-
-    const json body = {
-        {"playerName", playerName},
-        {"levelId", levelId},
-        {"score", score},
-        {"stars", stars},
-    };
-
-    const platform::http::Response response = perform_request_with_retry(
-        "submit_score",
-        [&]()
-        {
-            return platform::http::post(
-                baseUrl_ + "/scores",
-                body.dump(),
-                platform::http::Headers {
-                    {"Content-Type", "application/json"},
-                },
-                kBackendTimeoutMs );
-        });
-
-    if ( response.network_error )
-    {
-        Logger::error( "OnlineScoreClient::submit_score failed after retries." );
-        return false;
-    }
-
-    if ( !platform::http::is_http_ok( response ) )
-    {
-        Logger::error(
-            "OnlineScoreClient::submit_score failed: final http status={}",
-            response.status_code );
-        return false;
-    }
-
-    Logger::info( "OnlineScoreClient::submit_score success." );
-    return true;
-}
-
-bool OnlineScoreClient::submit_score_with_token(
-    const std::string& token,
-    int levelId,
-    int score,
-    int stars)
-{
-    if ( token.empty() )
-    {
-        Logger::info( "User is not logged in, skipping online score submission" );
-        return false;
-    }
-
-    Logger::info( "Submitting score with token" );
-
-    const json body = {
-        {"levelId", levelId},
-        {"score", score},
-        {"stars", stars},
-    };
-
-    const platform::http::Response response = perform_request_with_retry(
-        "submit_score_with_token",
-        [&]()
-        {
-            return platform::http::post(
-                baseUrl_ + "/scores",
-                body.dump(),
-                platform::http::Headers {
-                    {"Content-Type", "application/json"},
-                    {"Authorization", "Bearer " + token},
-                },
-                kBackendTimeoutMs );
-        });
-
-    if ( response.network_error )
-    {
-        Logger::error( "OnlineScoreClient::submit_score_with_token failed after retries." );
-        return false;
-    }
-
-    if ( !platform::http::is_http_ok( response ) )
-    {
-        Logger::error(
-            "OnlineScoreClient::submit_score_with_token failed: final http status={}",
-            response.status_code );
-        return false;
-    }
-
-    Logger::info( "OnlineScoreClient::submit_score_with_token success." );
-    return true;
-}
-
-// #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-
-LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int levelId)
+LeaderboardFetchResult parse_leaderboard_response( const platform::http::Response& response )
 {
     LeaderboardFetchResult result;
-
-    const platform::http::Response response = perform_request_with_retry(
-        "fetch_leaderboard",
-        [&]()
-        {
-            return platform::http::get(
-                baseUrl_ + "/leaderboard",
-                platform::http::QueryParams {
-                    {"levelId", std::to_string( levelId )},
-                },
-                platform::http::Headers {},
-                kBackendTimeoutMs );
-        });
 
     if ( response.network_error )
     {
@@ -319,9 +203,261 @@ LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int leve
     return result;
 }
 
-std::vector<LeaderboardEntry> OnlineScoreClient::fetch_leaderboard(int levelId)
+}  // namespace
+
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+OnlineScoreClient::OnlineScoreClient(std::string base_url)
+    : base_url_( resolve_backend_url( std::move( base_url ) ) )
 {
-    return fetch_leaderboard_with_status( levelId ).entries;
+    static std::once_flag logBackendUrlOnce;
+    std::call_once(
+        logBackendUrlOnce,
+        [this]()
+        {
+            Logger::info( "OnlineScoreClient backend URL: {}", base_url_ );
+        } );
+}
+
+// #=# Score Submission API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+bool OnlineScoreClient::submit_score(
+    const std::string& player_name,
+    int level_id,
+    int score,
+    int stars) const
+{
+    Logger::info(
+        "OnlineScoreClient::submit_score(playerName, ...) is legacy. "
+        "Use submit_score_with_token(token, ...) for JWT backend." );
+    Logger::info( "Submitting score to backend..." );
+
+    const json body = {
+        {"playerName", player_name},
+        {"levelId", level_id},
+        {"score", score},
+        {"stars", stars},
+    };
+
+    const platform::http::Response response = perform_request_with_retry(
+        "submit_score",
+        [&]()
+        {
+            return platform::http::post(
+                base_url_ + "/scores",
+                body.dump(),
+                platform::http::Headers {
+                    {"Content-Type", "application/json"},
+                },
+                kBackendTimeoutMs );
+        });
+
+    if ( response.network_error )
+    {
+        Logger::error( "OnlineScoreClient::submit_score failed after retries." );
+        return false;
+    }
+
+    if ( !platform::http::is_http_ok( response ) )
+    {
+        Logger::error(
+            "OnlineScoreClient::submit_score failed: final http status={}",
+            response.status_code );
+        return false;
+    }
+
+    Logger::info( "OnlineScoreClient::submit_score success." );
+    return true;
+}
+
+bool OnlineScoreClient::submit_score_with_token(
+    const std::string& token,
+    int level_id,
+    int score,
+    int stars) const
+{
+    if ( token.empty() )
+    {
+        Logger::info( "User is not logged in, skipping online score submission" );
+        return false;
+    }
+
+    if ( is_insecure_non_local_url( base_url_ ) )
+    {
+        Logger::error(
+            "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
+            base_url_ );
+        return false;
+    }
+
+    Logger::info( "Submitting score with token" );
+
+    const json body = {
+        {"levelId", level_id},
+        {"score", score},
+        {"stars", stars},
+    };
+
+    const platform::http::Response response = perform_request_with_retry(
+        "submit_score_with_token",
+        [&]()
+        {
+            return platform::http::post(
+                base_url_ + "/scores",
+                body.dump(),
+                platform::http::Headers {
+                    {"Content-Type", "application/json"},
+                    {"Authorization", "Bearer " + token},
+                },
+                kBackendTimeoutMs );
+        });
+
+    if ( response.network_error )
+    {
+        Logger::error( "OnlineScoreClient::submit_score_with_token failed after retries." );
+        return false;
+    }
+
+    if ( !platform::http::is_http_ok( response ) )
+    {
+        Logger::error(
+            "OnlineScoreClient::submit_score_with_token failed: final http status={}",
+            response.status_code );
+        return false;
+    }
+
+    Logger::info( "OnlineScoreClient::submit_score_with_token success." );
+    return true;
+}
+
+// #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+LeaderboardFetchResult OnlineScoreClient::fetch_leaderboard_with_status(int level_id) const
+{
+    const platform::http::Response response = perform_request_with_retry(
+        "fetch_leaderboard",
+        [&]()
+        {
+            return platform::http::get(
+                base_url_ + "/leaderboard",
+                platform::http::QueryParams {
+                    {"levelId", std::to_string( level_id )},
+                },
+                platform::http::Headers {},
+                kBackendTimeoutMs );
+        });
+
+    return parse_leaderboard_response( response );
+}
+
+std::vector<LeaderboardEntry> OnlineScoreClient::fetch_leaderboard(int level_id) const
+{
+    return fetch_leaderboard_with_status( level_id ).entries;
+}
+
+void OnlineScoreClient::submit_score_with_token_async(
+    const std::string& token,
+    int level_id,
+    int score,
+    int stars,
+    std::function<void(bool)> on_done ) const
+{
+#ifndef __EMSCRIPTEN__
+    if ( on_done )
+    {
+        on_done( submit_score_with_token( token, level_id, score, stars ) );
+    }
+#else
+    if ( !on_done )
+    {
+        return;
+    }
+
+    if ( token.empty() )
+    {
+        Logger::info( "User is not logged in, skipping online score submission" );
+        on_done( false );
+        return;
+    }
+
+    if ( is_insecure_non_local_url( base_url_ ) )
+    {
+        Logger::error(
+            "OnlineScoreClient::submit_score_with_token blocked insecure backend URL '{}'",
+            base_url_ );
+        on_done( false );
+        return;
+    }
+
+    const std::string submit_url = base_url_ + "/scores";
+    const json body = {
+        {"levelId", level_id},
+        {"score", score},
+        {"stars", stars},
+    };
+
+    platform::http::post_async(
+        submit_url,
+        body.dump(),
+        platform::http::Headers {
+            {"Content-Type", "application/json"},
+            {"Authorization", "Bearer " + token},
+        },
+        kBackendTimeoutMs,
+        [on_done = std::move( on_done )]( platform::http::Response response ) mutable
+        {
+            if ( response.network_error )
+            {
+                Logger::error(
+                    "OnlineScoreClient::submit_score_with_token failed: network error: {}",
+                    response.error_message );
+                on_done( false );
+                return;
+            }
+
+            if ( !platform::http::is_http_ok( response ) )
+            {
+                Logger::error(
+                    "OnlineScoreClient::submit_score_with_token failed: final http status={}",
+                    response.status_code );
+                on_done( false );
+                return;
+            }
+
+            Logger::info( "OnlineScoreClient::submit_score_with_token success." );
+            on_done( true );
+        } );
+#endif
+}
+
+void OnlineScoreClient::fetch_leaderboard_with_status_async(
+    int level_id,
+    std::function<void(LeaderboardFetchResult)> on_done ) const
+{
+#ifndef __EMSCRIPTEN__
+    if ( on_done )
+    {
+        on_done( fetch_leaderboard_with_status( level_id ) );
+    }
+#else
+    if ( !on_done )
+    {
+        return;
+    }
+
+    const std::string leaderboard_url = base_url_ + "/leaderboard";
+    platform::http::get_async(
+        leaderboard_url,
+        platform::http::QueryParams {
+            {"levelId", std::to_string( level_id )},
+        },
+        platform::http::Headers {},
+        kBackendTimeoutMs,
+        [on_done = std::move( on_done )]( platform::http::Response response ) mutable
+        {
+            on_done( parse_leaderboard_response( response ) );
+        } );
+#endif
 }
 
 }  // namespace angry

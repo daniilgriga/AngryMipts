@@ -173,7 +173,8 @@ int main()
                           std::make_unique<angry::GameScene>( app.font, &app.accounts ) );
     app.scenes.add_scene( angry::SceneId::Result,
                           std::make_unique<angry::ResultScene>( app.font ) );
-    app.scenes.switch_to( angry::SceneId::Login );
+    app.scenes.switch_to(
+        app.accounts.is_logged_in() ? angry::SceneId::Menu : angry::SceneId::Login );
 
     emscripten_set_main_loop( web_frame, 0, 1 );
 

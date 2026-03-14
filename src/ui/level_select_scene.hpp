@@ -17,6 +17,7 @@
 #include "scene.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -55,6 +56,7 @@ private:
     struct PreviewState
     {
         std::mutex mutex;
+        std::uint64_t request_token = 0;
         int        fetched_level_id = -1;
         LeaderboardFetchStatus fetch_status = LeaderboardFetchStatus::Unavailable;
         std::vector<LeaderboardEntry> entries;

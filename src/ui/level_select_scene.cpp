@@ -81,8 +81,11 @@ void LevelSelectScene::fetch_preview ( int level_id )
     preview_requested_id_ = level_id;
     preview_scroll_       = 0.f;
 
+    std::uint64_t request_token = 0;
     {
         std::lock_guard<std::mutex> lock ( preview_->mutex );
+        preview_->request_token += 1;
+        request_token = preview_->request_token;
         preview_->fetched_level_id = -1;
         preview_->fetch_status     = LeaderboardFetchStatus::Unavailable;
         preview_->entries.clear();
@@ -90,34 +93,36 @@ void LevelSelectScene::fetch_preview ( int level_id )
 
 #ifndef __EMSCRIPTEN__
     const std::shared_ptr<PreviewState> state = preview_;
-    std::thread ( [state, level_id]()
+    std::thread ( [state, level_id, request_token]()
     {
         OnlineScoreClient client;
         LeaderboardFetchResult r = client.fetch_leaderboard_with_status ( level_id );
 
         std::lock_guard<std::mutex> lock ( state->mutex );
+        if ( request_token != state->request_token )
+        {
+            return;
+        }
         state->fetched_level_id = level_id;
         state->fetch_status     = r.status;
         state->entries          = std::move ( r.entries );
     } ).detach();
 #else
-    // On web: fetch synchronously (no worker threads in wasm build).
-    LeaderboardFetchResult r;
-    try
-    {
-        OnlineScoreClient client;
-        r = client.fetch_leaderboard_with_status ( level_id );
-    }
-    catch ( const std::exception& e )
-    {
-        Logger::error ( "LevelSelectScene: failed to fetch leaderboard preview: {}", e.what() );
-        r = {};
-    }
-
-    std::lock_guard<std::mutex> lock ( preview_->mutex );
-    preview_->fetched_level_id = level_id;
-    preview_->fetch_status     = r.status;
-    preview_->entries          = std::move ( r.entries );
+    OnlineScoreClient client;
+    const std::shared_ptr<PreviewState> state = preview_;
+    client.fetch_leaderboard_with_status_async (
+        level_id,
+        [state, level_id, request_token] ( LeaderboardFetchResult r )
+        {
+            std::lock_guard<std::mutex> lock ( state->mutex );
+            if ( request_token != state->request_token )
+            {
+                return;
+            }
+            state->fetched_level_id = level_id;
+            state->fetch_status     = r.status;
+            state->entries          = std::move ( r.entries );
+        } );
 #endif
 }
 
