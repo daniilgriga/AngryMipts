@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -47,10 +48,20 @@ public:
 
     // Legacy API kept for transitional compatibility.
     // For JWT backend use submit_score_with_token(...).
-    bool submit_score(const std::string& playerName, int levelId, int score, int stars);
-    bool submit_score_with_token(const std::string& token, int levelId, int score, int stars);
-    LeaderboardFetchResult fetch_leaderboard_with_status(int levelId);
-    std::vector<LeaderboardEntry> fetch_leaderboard(int levelId);
+    bool submit_score(const std::string& playerName, int levelId, int score, int stars) const;
+    bool submit_score_with_token(
+        const std::string& token, int levelId, int score, int stars ) const;
+    LeaderboardFetchResult fetch_leaderboard_with_status(int levelId) const;
+    std::vector<LeaderboardEntry> fetch_leaderboard(int levelId) const;
+    void submit_score_with_token_async(
+        const std::string& token,
+        int levelId,
+        int score,
+        int stars,
+        std::function<void(bool)> on_done ) const;
+    void fetch_leaderboard_with_status_async(
+        int levelId,
+        std::function<void(LeaderboardFetchResult)> on_done ) const;
 
 private:
     std::string baseUrl_;
