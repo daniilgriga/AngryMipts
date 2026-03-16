@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "id": 1,
+    "name": "level_01",
+    "totalShots": 3,
+    "starThresholds": [
+      2000,
+      2500,
+      2990
+    ]
+  },
+  "slingshot": {
+    "position": [
+      140,
+      600
+    ],
+    "maxPull": 195
+  },
+  "projectiles": [
+    {
+      "type": "Standard"
+    },
+    {
+      "type": "Splitter"
+    },
+    {
+      "type": "Heavy"
+    }
+  ],
+  "blocks": [
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        870,
+        555
+      ],
+      "size": [
+        24,
+        90
+      ],
+      "angle": 0,
+      "hp": 35
+    },
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        1030,
+        555
+      ],
+      "size": [
+        24,
+        90
+      ],
+      "angle": 0,
+      "hp": 35
+    },
+    {
+      "shape": "rect",
+      "material": "Wood",
+      "position": [
+        950,
+        505
+      ],
+      "size": [
+        200,
+        20
+      ],
+      "angle": 0,
+      "hp": 55
+    },
+    {
+      "shape": "circle",
+      "material": "Stone",
+      "position": [
+        950,
+        465
+      ],
+      "radius": 28,
+      "angle": 0,
+      "hp": 110
+    }
+  ],
+  "targets": [
+    {
+      "position": [
+        905,
+        475
+      ],
+      "radius": 16,
+      "hp": 22,
+      "score": 1400
+    },
+    {
+      "position": [
+        995,
+        475
+      ],
+      "radius": 16,
+      "hp": 22,
+      "score": 1400
+    }
+  ]
+}
