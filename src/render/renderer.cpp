@@ -252,19 +252,40 @@ void Renderer::draw_snapshot ( platform::RenderTarget& target, const WorldSnapsh
 
 void Renderer::draw_background ( platform::RenderTarget& target )
 {
-    // Sky — two solid rects in world coordinates (Window::draw(RectShape) applies
-    // world_to_screen internally, so we use world units here).
-    const float sky_mid = kGroundY * 0.55f;
+    // Sky — smooth vertical gradient from deep blue (top) to hazy horizon (bottom)
+    // using a TriangleStrip with per-vertex colours.
+    {
+        const platform::Color c_zenith  ( 48,  100, 185 );   // deep blue at top
+        const platform::Color c_mid     ( 90,  155, 210 );   // mid sky
+        const platform::Color c_horizon ( 175, 215, 240 );   // hazy pale at horizon
 
-    platform::RectShape sky_top ( { kWorldW, sky_mid } );
-    sky_top.setPosition ( { 0.f, 0.f } );
-    sky_top.setFillColor ( platform::Color ( 70, 130, 200 ) );
-    target.draw ( sky_top );
+        // Four rows: y=0 (zenith), y=kGroundY*0.4 (mid), y=kGroundY*0.75 (near-horizon), y=kGroundY
+        const float y0 = 0.f;
+        const float y1 = kGroundY * 0.4f;
+        const float y2 = kGroundY * 0.75f;
+        const float y3 = kGroundY;
 
-    platform::RectShape sky_bot ( { kWorldW, kGroundY - sky_mid } );
-    sky_bot.setPosition ( { 0.f, sky_mid } );
-    sky_bot.setFillColor ( platform::Color ( 148, 200, 235 ) );
-    target.draw ( sky_bot );
+        auto lerp_color = []( platform::Color a, platform::Color b, float t ) -> platform::Color {
+            return platform::Color (
+                static_cast<uint8_t>( a.r + ( b.r - a.r ) * t ),
+                static_cast<uint8_t>( a.g + ( b.g - a.g ) * t ),
+                static_cast<uint8_t>( a.b + ( b.b - a.b ) * t ),
+                255 );
+        };
+        const platform::Color c_mid2 = lerp_color ( c_mid, c_horizon, 0.5f );
+
+        // TriangleStrip: left-right pairs for each horizontal band
+        platform::VertexArray sky ( sf::PrimitiveType::TriangleStrip, 8 );
+        sky[0] = { {0.f,      y0}, c_zenith };
+        sky[1] = { {kWorldW,  y0}, c_zenith };
+        sky[2] = { {0.f,      y1}, c_mid    };
+        sky[3] = { {kWorldW,  y1}, c_mid    };
+        sky[4] = { {0.f,      y2}, c_mid2   };
+        sky[5] = { {kWorldW,  y2}, c_mid2   };
+        sky[6] = { {0.f,      y3}, c_horizon};
+        sky[7] = { {kWorldW,  y3}, c_horizon};
+        target.draw ( sky );
+    }
 
     // Distant hills (dark green silhouettes)
     draw_hill ( target, 300.f, kGroundY, 400.f, 120.f, platform::Color ( 52, 110, 48, 255 ) );
@@ -280,30 +301,40 @@ void Renderer::draw_background ( platform::RenderTarget& target )
     draw_cloud ( target, std::fmod ( 1600.f + t * 7.4f, kWorldW + 360.f ) - 180.f, 100.f, 0.6f );
 
     // --- Ground ---
-    // Earth body: layered gradient (grass → topsoil → dark soil)
+    // Earth body: smooth gradient (grass top → topsoil → dark soil → deep)
     {
-        const platform::Color c_grass  ( 88,  168,  62 );
-        const platform::Color c_top    ( 112, 78,   44 );
-        const platform::Color c_soil   ( 72,  50,   28 );
-        const platform::Color c_deep   ( 48,  34,   18 );
+        const platform::Color c_grass ( 82,  155,  58 );
+        const platform::Color c_top   ( 112,  78,  44 );
+        const platform::Color c_soil  (  72,  50,  28 );
+        const platform::Color c_deep  (  48,  34,  18 );
 
-        // Use RectShape for solid fills — reliable on all WebGL backends.
-        // Gradient layers: approximate with two rects (top colour / bottom colour).
-        auto draw_rect_strip = [&]( float y0, float y1,
-                                    platform::Color top_c, platform::Color bot_c )
-        {
-            platform::RectShape r ( { kWorldW, ( y1 - y0 ) * 0.5f } );
-            r.setPosition ( { 0.f, y0 } );
-            r.setFillColor ( top_c );
-            target.draw ( r );
-            r.setPosition ( { 0.f, y0 + ( y1 - y0 ) * 0.5f } );
-            r.setFillColor ( bot_c );
-            target.draw ( r );
-        };
+        // TriangleStrip with per-vertex colours for smooth gradient.
+        platform::VertexArray ground ( sf::PrimitiveType::TriangleStrip, 8 );
+        const float gy0 = kGroundY;
+        const float gy1 = kGroundY + 30.f;
+        const float gy2 = kGroundY + 120.f;
+        const float gy3 = kWorldH;
+        ground[0] = { {0.f,     gy0}, c_grass };
+        ground[1] = { {kWorldW, gy0}, c_grass };
+        ground[2] = { {0.f,     gy1}, c_top   };
+        ground[3] = { {kWorldW, gy1}, c_top   };
+        ground[4] = { {0.f,     gy2}, c_soil  };
+        ground[5] = { {kWorldW, gy2}, c_soil  };
+        ground[6] = { {0.f,     gy3}, c_deep  };
+        ground[7] = { {kWorldW, gy3}, c_deep  };
+        target.draw ( ground );
+    }
 
-        draw_rect_strip ( kGroundY,        kGroundY + 28.f,  c_grass, c_top  );
-        draw_rect_strip ( kGroundY + 28.f, kGroundY + 120.f, c_top,   c_soil );
-        draw_rect_strip ( kGroundY + 120.f, kWorldH,          c_soil,  c_deep );
+    // Horizon haze: thin semi-transparent strip to soften the sky/ground edge
+    {
+        const platform::Color haze_top    ( 200, 230, 255,   0 );
+        const platform::Color haze_bottom ( 210, 235, 255, 100 );
+        platform::VertexArray haze ( sf::PrimitiveType::TriangleStrip, 4 );
+        haze[0] = { {0.f,     kGroundY - 18.f}, haze_top    };
+        haze[1] = { {kWorldW, kGroundY - 18.f}, haze_top    };
+        haze[2] = { {0.f,     kGroundY + 10.f}, haze_bottom };
+        haze[3] = { {kWorldW, kGroundY + 10.f}, haze_bottom };
+        target.draw ( haze );
     }
 
     // Wavy grass edge: a thin strip with sinusoidal top profile
