@@ -1,3 +1,14 @@
+// ============================================================
+// slingshot.hpp — Slingshot input/render helper interface.
+// Part of: angry::ui
+//
+// Declares helper for gameplay launch interactions:
+//   * Tracks drag state and converts release to LaunchCmd
+//   * Draws slingshot and loaded projectile preview
+//   * Computes trajectory preview points
+//   * Works with world-view transformed input coordinates
+// ============================================================
+
 #pragma once
 #include "platform/platform.hpp"
 #include "shared/command.hpp"
@@ -9,6 +20,8 @@
 namespace angry
 {
 
+// Handles drag-to-launch interaction and rendering for the
+// slingshot element in gameplay scene.
 class Slingshot
 {
 private:

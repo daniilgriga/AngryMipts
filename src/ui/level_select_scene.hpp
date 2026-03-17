@@ -1,11 +1,23 @@
+// ============================================================
+// level_select_scene.hpp — Level selection scene interface.
+// Part of: angry::ui
+//
+// Declares UI scene for choosing and previewing levels:
+//   * Loads level metadata and local progress summaries
+//   * Shows leaderboard previews from account service
+//   * Handles keyboard/mouse navigation and scrolling
+//   * Exposes selected level id for game scene launch
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "data/level_loader.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 #include "data/score_saver.hpp"
 #include "scene.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -13,6 +25,8 @@
 namespace angry
 {
 
+// Renders and controls interactive level list with progress and
+// leaderboard preview panels.
 class LevelSelectScene : public Scene
 {
 private:
@@ -42,6 +56,7 @@ private:
     struct PreviewState
     {
         std::mutex mutex;
+        std::uint64_t request_token = 0;
         int        fetched_level_id = -1;
         LeaderboardFetchStatus fetch_status = LeaderboardFetchStatus::Unavailable;
         std::vector<LeaderboardEntry> entries;

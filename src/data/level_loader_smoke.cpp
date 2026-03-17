@@ -1,8 +1,22 @@
+// ============================================================
+// level_loader_smoke.cpp — Data-layer smoke executable.
+// Part of: angry::data
+//
+// Implements a lightweight runtime sanity check that:
+//   * Loads selected level JSON files via LevelLoader
+//   * Verifies presence of triangle vertices on test level
+//   * Exercises ScoreSaver best-value update behavior
+//   * Returns non-zero on any failed expectation
+// ============================================================
+
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "data/level_loader.hpp"
 #include "data/score_saver.hpp"
@@ -10,6 +24,7 @@
 namespace
 {
 
+// Throws when a smoke condition fails to keep main flow linear.
 void expect( bool condition, const std::string& message )
 {
     if ( !condition )
@@ -18,7 +33,36 @@ void expect( bool condition, const std::string& message )
     }
 }
 
+std::string two_digit( int value )
+{
+    std::ostringstream out;
+    out << std::setw( 2 ) << std::setfill( '0' ) << value;
+    return out.str();
+}
+
+std::filesystem::path resolve_level_path( const std::filesystem::path& levels_dir,
+                                          int level_id )
+{
+    const std::array<std::string, 3> candidates = {
+        "level_0" + std::to_string( level_id ) + ".json",
+        "level_" + two_digit( level_id ) + ".json",
+        "level_" + std::to_string( level_id ) + ".json",
+    };
+
+    for ( const std::string& candidate : candidates )
+    {
+        const std::filesystem::path path = levels_dir / candidate;
+        if ( std::filesystem::exists( path ) )
+            return path;
+    }
+
+    throw std::runtime_error( "Failed to resolve level file for id=" +
+                              std::to_string( level_id ) );
+}
+
 }  // namespace
+
+// #=# Smoke Entry Point #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 int main()
 {
@@ -27,21 +71,37 @@ int main()
         angry::LevelLoader loader;
         const std::filesystem::path levelsDir =
             std::filesystem::path( ANGRY_MIPTS_SOURCE_DIR ) / "levels";
-        const std::vector<std::string> levelFiles = {
-            ( levelsDir / "level_01.json" ).string(),
-            ( levelsDir / "level_02.json" ).string(),
-            ( levelsDir / "level_03.json" ).string(),
-        };
-
-        for ( const std::string& path : levelFiles )
-        {
-            const angry::LevelData level = loader.load( path );
-            std::cout << "Loaded level id=" << level.meta.id << " name='" << level.meta.name
-                      << "'\n";
-        }
 
         const std::vector<angry::LevelMeta> allMeta = loader.loadAllMeta( levelsDir.string() );
         std::cout << "Loaded meta count: " << allMeta.size() << "\n";
+        expect( !allMeta.empty(), "no levels discovered in levels directory" );
+
+        bool has_triangle_vertices = false;
+        std::size_t printed_levels = 0;
+        for ( const angry::LevelMeta& meta : allMeta )
+        {
+            const std::filesystem::path levelPath = resolve_level_path( levelsDir, meta.id );
+            const angry::LevelData level = loader.load( levelPath.string() );
+
+            if ( printed_levels < 3 )
+            {
+                std::cout << "Loaded level id=" << level.meta.id << " name='"
+                          << level.meta.name << "'\n";
+                ++printed_levels;
+            }
+
+            for ( const angry::BlockData& block : level.blocks )
+            {
+                if ( block.shape == angry::BlockShape::Triangle &&
+                     !block.triangleLocalVerticesPx.empty() )
+                {
+                    has_triangle_vertices = true;
+                    break;
+                }
+            }
+        }
+        expect( has_triangle_vertices,
+                "at least one level must include triangle vertices" );
 
         angry::ScoreSaver scoreSaver;
         const std::filesystem::path smokeScoresPath =

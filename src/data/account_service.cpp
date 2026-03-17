@@ -1,9 +1,22 @@
+// ============================================================
+// account_service.cpp — Account facade implementation.
+// Part of: angry::data
+//
+// Implements account-related integration workflows:
+//   * Connects auth API with local session persistence
+//   * Enforces login requirements for score submission
+//   * Provides leaderboard retrieval passthrough methods
+//   * Keeps UI-facing API compact and backend-agnostic
+// ============================================================
+
 #include "data/account_service.hpp"
 
 #include "data/logger.hpp"
 
 namespace angry
 {
+
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 AccountService::AccountService( std::string sessionFilepath, std::string baseUrl )
     : sessionManager_( std::move( sessionFilepath ) ),
@@ -12,14 +25,16 @@ AccountService::AccountService( std::string sessionFilepath, std::string baseUrl
 {
 }
 
-void AccountService::loadSession()
+// #=# Session / Auth API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void AccountService::load_session()
 {
-    sessionManager_.loadSession();
+    sessionManager_.load_session();
 }
 
-bool AccountService::isLoggedIn() const
+bool AccountService::is_logged_in() const
 {
-    return sessionManager_.isLoggedIn();
+    return sessionManager_.is_logged_in();
 }
 
 const std::string& AccountService::username() const
@@ -32,11 +47,11 @@ const std::string& AccountService::token() const
     return sessionManager_.token();
 }
 
-AuthResult AccountService::registerAndLogin(
+AuthResult AccountService::register_and_login(
     const std::string& username,
     const std::string& password )
 {
-    const AuthResult registerResult = authClient_.registerUser( username, password );
+    const AuthResult registerResult = authClient_.register_user( username, password );
     if ( !registerResult.success )
     {
         return registerResult;
@@ -49,43 +64,45 @@ AuthResult AccountService::login(
     const std::string& username,
     const std::string& password )
 {
-    AuthResult result = authClient_.loginUser( username, password );
+    AuthResult result = authClient_.login_user( username, password );
     if ( !result.success )
     {
         // Contract: failed login must not save token.
         return result;
     }
 
-    sessionManager_.setSession( result.token, result.username );
-    sessionManager_.saveSession();
+    sessionManager_.set_session( result.token, result.username );
+    sessionManager_.save_session();
     return result;
 }
 
 void AccountService::logout()
 {
-    sessionManager_.clearSession();
+    sessionManager_.clear_session();
 }
 
-bool AccountService::submitScoreIfLoggedIn( int levelId, int score, int stars )
+// #=# Leaderboard API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+bool AccountService::submit_score_if_logged_in( int levelId, int score, int stars )
 {
-    if ( !sessionManager_.isLoggedIn() )
+    if ( !sessionManager_.is_logged_in() )
     {
         Logger::info( "User is not logged in, skipping online score submission" );
         return false;
     }
 
-    return onlineScoreClient_.submitScoreWithToken(
+    return onlineScoreClient_.submit_score_with_token(
         sessionManager_.token(), levelId, score, stars );
 }
 
-LeaderboardFetchResult AccountService::fetchLeaderboardWithStatus( int levelId )
+LeaderboardFetchResult AccountService::fetch_leaderboard_with_status( int levelId )
 {
-    return onlineScoreClient_.fetchLeaderboardWithStatus( levelId );
+    return onlineScoreClient_.fetch_leaderboard_with_status( levelId );
 }
 
-std::vector<LeaderboardEntry> AccountService::fetchLeaderboard( int levelId )
+std::vector<LeaderboardEntry> AccountService::fetch_leaderboard( int levelId )
 {
-    return onlineScoreClient_.fetchLeaderboard( levelId );
+    return onlineScoreClient_.fetch_leaderboard( levelId );
 }
 
 }  // namespace angry

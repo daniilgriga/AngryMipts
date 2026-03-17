@@ -1,3 +1,14 @@
+// ============================================================
+// scene_manager.hpp — Scene ownership and navigation API.
+// Part of: angry::ui
+//
+// Declares scene container and transition orchestrator:
+//   * Owns scene instances indexed by SceneId
+//   * Switches active scene and forwards frame callbacks
+//   * Provides typed scene lookup helpers
+//   * Centralizes app-level scene transitions
+// ============================================================
+
 #pragma once
 #include "scene.hpp"
 
@@ -7,6 +18,8 @@
 namespace angry
 {
 
+// Owns all scenes and forwards input/update/render calls to the
+// currently active scene.
 class SceneManager
 {
 private:

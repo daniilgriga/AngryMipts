@@ -1,3 +1,14 @@
+// ============================================================
+// ui_render_tests.cpp — UI/render helper unit tests.
+// Part of: angry::tests
+//
+// Verifies rendering-adjacent utility behavior:
+//   * Letterbox viewport calculations for aspect handling
+//   * Particle system frame/hard-cap constraints
+//   * Particle lifetime expiration behavior
+//   * Non-GPU deterministic helper expectations
+// ============================================================
+
 #include "render/particles.hpp"
 #include "shared/world_config.hpp"
 #include "ui/view_utils.hpp"
@@ -8,42 +19,46 @@
 #include <cmath>
 #include <cstdlib>
 
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 bool almost_equal ( float a, float b, float eps = 1e-4f )
 {
     return std::fabs ( a - b ) <= eps;
 }
 
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 TEST ( LetterboxView, EqualAspectUsesFullViewport )
 {
     sf::View view ( sf::FloatRect ( {0.f, 0.f}, {angry::world::kWidthPx, angry::world::kHeightPx} ) );
     angry::apply_letterbox_view ( view, {1280u, 720u} );
-    const sf::FloatRect vp = view.getViewport();
-    EXPECT_TRUE ( almost_equal ( vp.position.x, 0.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.position.y, 0.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.x, 1.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.y, 1.f ) );
+    const sf::FloatRect viewport = view.getViewport();
+    EXPECT_TRUE ( almost_equal ( viewport.position.x, 0.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.position.y, 0.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.x, 1.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.y, 1.f ) );
 }
 
 TEST ( LetterboxView, WideWindowAddsSideBars )
 {
     sf::View view ( sf::FloatRect ( {0.f, 0.f}, {angry::world::kWidthPx, angry::world::kHeightPx} ) );
     angry::apply_letterbox_view ( view, {2560u, 720u} );
-    const sf::FloatRect vp = view.getViewport();
-    EXPECT_TRUE ( almost_equal ( vp.position.x, 0.25f ) );
-    EXPECT_TRUE ( almost_equal ( vp.position.y, 0.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.x, 0.5f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.y, 1.f ) );
+    const sf::FloatRect viewport = view.getViewport();
+    EXPECT_TRUE ( almost_equal ( viewport.position.x, 0.25f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.position.y, 0.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.x, 0.5f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.y, 1.f ) );
 }
 
 TEST ( LetterboxView, TallWindowAddsTopBottomBars )
 {
     sf::View view ( sf::FloatRect ( {0.f, 0.f}, {angry::world::kWidthPx, angry::world::kHeightPx} ) );
     angry::apply_letterbox_view ( view, {720u, 1280u} );
-    const sf::FloatRect vp = view.getViewport();
-    EXPECT_TRUE ( almost_equal ( vp.position.x, 0.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.position.y, 0.341796875f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.x, 1.f ) );
-    EXPECT_TRUE ( almost_equal ( vp.size.y, 0.31640625f ) );
+    const sf::FloatRect viewport = view.getViewport();
+    EXPECT_TRUE ( almost_equal ( viewport.position.x, 0.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.position.y, 0.341796875f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.x, 1.f ) );
+    EXPECT_TRUE ( almost_equal ( viewport.size.y, 0.31640625f ) );
 }
 
 TEST ( ParticleSystem, EnforcesFrameAndHardCaps )

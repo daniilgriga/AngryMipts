@@ -1,3 +1,14 @@
+// ============================================================
+// scene_manager.cpp — Scene manager implementation.
+// Part of: angry::ui
+//
+// Implements scene ownership and transition logic:
+//   * Stores scene instances and current active scene id
+//   * Forwards input/update/render to active scene
+//   * Executes cross-scene handoff data wiring
+//   * Applies transition side effects for gameplay flow
+// ============================================================
+
 #include "ui/scene_manager.hpp"
 
 #include "ui/game_scene.hpp"

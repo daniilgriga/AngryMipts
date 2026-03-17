@@ -1,3 +1,14 @@
+// ============================================================
+// slingshot.cpp — Slingshot interaction implementation.
+// Part of: angry::ui
+//
+// Implements drag-to-launch mechanics and rendering:
+//   * Converts pointer drag into launch pull vector
+//   * Clamps pull by slingshot maximum distance
+//   * Draws bands, projectile, and trajectory preview
+//   * Emits LaunchCmd on release when shooting is allowed
+// ============================================================
+
 #include "ui/slingshot.hpp"
 
 #ifndef __EMSCRIPTEN__
@@ -8,6 +19,8 @@
 
 namespace angry
 {
+
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 std::optional<Command> Slingshot::handle_input ( const platform::Event& event,
                                                   const SlingshotState& sling,
@@ -131,6 +144,8 @@ std::optional<Command> Slingshot::handle_input ( const platform::Event& event,
     return std::nullopt;
 }
 
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void Slingshot::render ( platform::RenderTarget& target, const SlingshotState& sling,
                          const platform::Texture& projectile_tex )
 {
@@ -249,6 +264,8 @@ void Slingshot::render ( platform::RenderTarget& target, const SlingshotState& s
 
 #endif
 }
+
+// #=# Trajectory Prediction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 std::vector<platform::Vec2f> Slingshot::calc_trajectory ( platform::Vec2f launch_vel,
                                                            platform::Vec2f start,

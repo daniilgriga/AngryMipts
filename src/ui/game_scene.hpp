@@ -1,7 +1,18 @@
+// ============================================================
+// game_scene.hpp — Main gameplay scene interface.
+// Part of: angry::ui
+//
+// Declares the central in-level scene that:
+//   * Integrates physics runtime, renderer, and slingshot input
+//   * Coordinates score saving and online leaderboard sync
+//   * Tracks transient gameplay VFX/SFX state
+//   * Produces LevelResult for transition to result scene
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
 #include "data/level_loader.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 #include "data/score_saver.hpp"
 #include "physics/physics_runtime.hpp"
 #include "render/particles.hpp"
@@ -26,6 +37,8 @@
 namespace angry
 {
 
+// Owns gameplay loop orchestration between input, physics,
+// rendering, effects, and result transition state.
 class GameScene : public Scene
 {
 private:
@@ -122,6 +135,10 @@ private:
     bool show_perf_overlay_ = true;
     float smoothed_dt_sec_ = 1.0f / 60.0f;
     float smoothed_fps_ = 60.0f;
+    ImpactOutcome last_impact_outcome_ = ImpactOutcome::Grazed;
+    float last_impact_speed_before_mps_ = 0.0f;
+    float last_impact_speed_after_mps_ = 0.0f;
+    float last_impact_age_sec_ = 999.0f;
     float vfx_load_factor_ = 1.0f;
     bool render_targets_dirty_ = true;
     bool snapshot_ready_ = false;  // false until first Running snapshot received after load

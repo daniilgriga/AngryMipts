@@ -1,3 +1,14 @@
+// ============================================================
+// world_snapshot.hpp — Immutable frame-state snapshot models.
+// Part of: angry::shared
+//
+// Defines render-facing state produced by physics/runtime:
+//   * Per-object transforms, shape, hp, and activity flags
+//   * Slingshot state and projectile queue for HUD
+//   * Score, shots, stars, and level status counters
+//   * Physics step timing used by debug overlay
+// ============================================================
+
 #pragma once
 #include <vector>
 
@@ -27,6 +38,7 @@ struct ObjectSnapshot
     bool isStatic = false;               // static blocks rendered as solid ground elements
     float hpNormalized;  // 0.0 .. 1.0
     bool isActive;
+    std::vector<Vec2> triangleLocalVerticesPx;  // local vertices for triangle blocks (relative to center)
 };
 
 struct SlingshotState

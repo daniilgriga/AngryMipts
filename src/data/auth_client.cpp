@@ -1,3 +1,14 @@
+// ============================================================
+// auth_client.cpp — Backend authentication client implementation.
+// Part of: angry::data
+//
+// Implements register/login request flow:
+//   * Resolves backend URL from explicit arg/env/default
+//   * Builds JSON request payloads and parses responses
+//   * Normalizes transport/server errors into AuthResult
+//   * Emits concise diagnostics for auth operations
+// ============================================================
+
 #include "data/auth_client.hpp"
 
 #include "data/logger.hpp"
@@ -10,6 +21,9 @@
 
 namespace angry
 {
+
+// #=# Local Helpers & Constants #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
@@ -19,7 +33,25 @@ constexpr int kAuthTimeoutMs = 3000;
 constexpr const char* kDefaultBackendUrl = "http://84.201.138.107:8080";
 constexpr const char* kBackendUrlEnvVar = "ANGRY_BACKEND_URL";
 
-std::string resolveBackendUrl( std::string baseUrl )
+bool starts_with( const std::string& value, const char* prefix )
+{
+    const std::size_t prefix_len = std::char_traits<char>::length( prefix );
+    return value.size() >= prefix_len && value.compare( 0, prefix_len, prefix ) == 0;
+}
+
+bool is_local_http_url( const std::string& url )
+{
+    return starts_with( url, "http://127.0.0.1" )
+        || starts_with( url, "http://localhost" )
+        || starts_with( url, "http://[::1]" );
+}
+
+bool is_insecure_non_local_url( const std::string& url )
+{
+    return starts_with( url, "http://" ) && !is_local_http_url( url );
+}
+
+std::string resolve_backend_url( std::string baseUrl )
 {
     if ( !baseUrl.empty() )
     {
@@ -35,7 +67,7 @@ std::string resolveBackendUrl( std::string baseUrl )
     return std::string( kDefaultBackendUrl );
 }
 
-std::string extractErrorMessage( const platform::http::Response& response, const char* fallback )
+std::string extract_error_message( const platform::http::Response& response, const char* fallback )
 {
     if ( response.network_error )
     {
@@ -68,12 +100,18 @@ std::string extractErrorMessage( const platform::http::Response& response, const
     return std::string( fallback );
 }
 
-AuthResult postAuthRequest(
+AuthResult post_auth_request(
     const std::string& endpoint,
     const std::string& baseUrl,
     const std::string& username,
     const std::string& password )
 {
+    if ( is_insecure_non_local_url( baseUrl ) )
+    {
+        Logger::info( "AuthClient: connecting to insecure (non-HTTPS) backend URL '{}'", baseUrl );
+    }
+
+    AuthResult result;
     const Json body = {
         {"username", username},
         {"password", password},
@@ -87,17 +125,15 @@ AuthResult postAuthRequest(
         },
         kAuthTimeoutMs );
 
-    AuthResult result;
-
     if ( response.network_error )
     {
-        result.errorMessage = extractErrorMessage( response, "server unavailable" );
+        result.errorMessage = extract_error_message( response, "server unavailable" );
         return result;
     }
 
     if ( response.status_code < 200 || response.status_code >= 300 )
     {
-        result.errorMessage = extractErrorMessage( response, "request failed" );
+        result.errorMessage = extract_error_message( response, "request failed" );
         return result;
     }
 
@@ -107,18 +143,22 @@ AuthResult postAuthRequest(
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 AuthClient::AuthClient( std::string baseUrl )
-    : baseUrl_( resolveBackendUrl( std::move( baseUrl ) ) )
+    : baseUrl_( resolve_backend_url( std::move( baseUrl ) ) )
 {
 }
 
-AuthResult AuthClient::registerUser(
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+AuthResult AuthClient::register_user(
     const std::string& username,
     const std::string& password ) const
 {
     Logger::info( "Register request started" );
 
-    AuthResult result = postAuthRequest( "/register", baseUrl_, username, password );
+    AuthResult result = post_auth_request( "/register", baseUrl_, username, password );
     if ( !result.success )
     {
         Logger::error( "Register failed: {}", result.errorMessage );
@@ -130,10 +170,15 @@ AuthResult AuthClient::registerUser(
     return result;
 }
 
-AuthResult AuthClient::loginUser(
+AuthResult AuthClient::login_user(
     const std::string& username,
     const std::string& password ) const
 {
+    if ( is_insecure_non_local_url( baseUrl_ ) )
+    {
+        Logger::info( "AuthClient: connecting to insecure (non-HTTPS) backend URL '{}'", baseUrl_ );
+    }
+
     Logger::info( "Login request started" );
 
     const Json body = {
@@ -153,14 +198,14 @@ AuthResult AuthClient::loginUser(
 
     if ( response.network_error )
     {
-        result.errorMessage = extractErrorMessage( response, "server unavailable" );
+        result.errorMessage = extract_error_message( response, "server unavailable" );
         Logger::error( "Login failed: {}", result.errorMessage );
         return result;
     }
 
     if ( response.status_code < 200 || response.status_code >= 300 )
     {
-        result.errorMessage = extractErrorMessage( response, "invalid username or password" );
+        result.errorMessage = extract_error_message( response, "invalid username or password" );
         Logger::error( "Login failed: {}", result.errorMessage );
         return result;
     }

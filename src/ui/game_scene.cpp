@@ -1,3 +1,14 @@
+// ============================================================
+// game_scene.cpp — Main gameplay scene implementation.
+// Part of: angry::ui
+//
+// Implements in-level runtime orchestration:
+//   * Processes input and sends commands to physics runtime
+//   * Renders world snapshot, HUD, particles, and overlays
+//   * Handles gameplay events, score sync, and result output
+//   * Bridges data/account services with gameplay flow
+// ============================================================
+
 #include "ui/game_scene.hpp"
 
 #include "data/logger.hpp"
@@ -19,6 +30,7 @@ namespace angry
 {
 namespace
 {
+// #=# Local Constants & Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 #ifdef __EMSCRIPTEN__
 constexpr PhysicsMode kDefaultPhysicsMode = PhysicsMode::SingleThread;
@@ -105,6 +117,45 @@ float strong_impact_factor ( float impulse )
     return std::clamp (
         ( impulse - kStrongImpactThreshold ) / ( kStrongImpactMax - kStrongImpactThreshold ),
         0.f, 1.f );
+}
+
+const char* impact_outcome_label ( ImpactOutcome outcome )
+{
+    switch ( outcome )
+    {
+    case ImpactOutcome::Blocked:
+        return "Blocked";
+    case ImpactOutcome::BrokenCarryThrough:
+        return "BrokenCarryThrough";
+    case ImpactOutcome::Grazed:
+    default:
+        return "Grazed";
+    }
+}
+
+platform::Color impact_outcome_color ( ImpactOutcome outcome )
+{
+    switch ( outcome )
+    {
+    case ImpactOutcome::Blocked:
+        return platform::Color ( 255, 184, 142, 210 );
+    case ImpactOutcome::BrokenCarryThrough:
+        return platform::Color ( 182, 255, 222, 224 );
+    case ImpactOutcome::Grazed:
+    default:
+        return platform::Color ( 196, 214, 255, 188 );
+    }
+}
+
+std::string make_impact_debug_line ( ImpactOutcome outcome,
+                                     float speed_before_mps,
+                                     float speed_after_mps )
+{
+    std::ostringstream out;
+    out << impact_outcome_label ( outcome )
+        << "  " << std::fixed << std::setprecision ( 1 )
+        << speed_before_mps << " -> " << speed_after_mps << " m/s";
+    return out.str();
 }
 
 std::string resolveProjectPath( const std::filesystem::path& relativePath )
@@ -586,6 +637,8 @@ WorldSnapshot GameScene::make_mock_snapshot()
     return snap;
 }
 
+// #=# Construction / Render Targets #=#=#=#=#=#=#=#=#=#=#=#=#
+
 GameScene::GameScene ( const platform::Font& font, AccountService* accounts )
     : accounts_ ( accounts )
     , physics_ ( kDefaultPhysicsMode )
@@ -708,6 +761,8 @@ void GameScene::rebuild_render_targets ( platform::Vec2u size )
 #endif
 }
 
+// #=# Level Flow / Result Sync #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void GameScene::load_level ( int level_id, const std::string& scores_path )
 {
     level_id_ = level_id;
@@ -718,6 +773,10 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     pending_events_.clear();
     smoothed_dt_sec_ = 1.0f / 60.0f;
     smoothed_fps_ = 60.0f;
+    last_impact_outcome_ = ImpactOutcome::Grazed;
+    last_impact_speed_before_mps_ = 0.0f;
+    last_impact_speed_after_mps_ = 0.0f;
+    last_impact_age_sec_ = 999.0f;
     vfx_load_factor_ = 1.0f;
     render_targets_dirty_ = true;
     pending_result_token_ = 0;
@@ -728,8 +787,8 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
     {
         const std::string path = resolveLevelPath ( level_id );
         const LevelData level = level_loader_.load ( path );
-        physics_.registerLevel ( level );
-        physics_.loadLevel ( level );
+        physics_.register_level ( level );
+        physics_.load_level ( level );
         if ( physics_.mode() == PhysicsMode::Threaded )
         {
             // Avoid blocking main thread while worker applies LoadLevelCmd.
@@ -739,7 +798,7 @@ void GameScene::load_level ( int level_id, const std::string& scores_path )
         }
         else
         {
-            snapshot_ = physics_.getSnapshot();
+            snapshot_ = physics_.get_snapshot();
         }
         frame_clock_.restart();
         Logger::info ( "GameScene: loaded level {}", level_id );
@@ -761,7 +820,7 @@ void GameScene::finish_level()
     const int score = snapshot_.score;
     const int stars = std::clamp ( snapshot_.stars, 0, 3 );
 
-    const bool logged_in = accounts_ && accounts_->isLoggedIn();
+    const bool logged_in = accounts_ && accounts_->is_logged_in();
     last_result_ = { won, score, stars, logged_in,
                      LeaderboardFetchStatus::Unavailable, {} };
     leaderboard_applied_ = true;
@@ -808,10 +867,12 @@ void GameScene::finish_level()
                     if ( won_value )
                     {
                         Logger::info (
-                            "GameScene: submitting score levelId={} score={} stars={} token={}",
-                            level_id, score_value, stars_value,
-                            auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
-                        const bool submit_ok = client.submitScoreWithToken (
+                            "GameScene: submitting score levelId={} score={} stars={} auth={}",
+                            level_id,
+                            score_value,
+                            stars_value,
+                            auth_token.empty() ? "guest" : "logged-in" );
+                        const bool submit_ok = client.submit_score_with_token (
                             auth_token, level_id, score_value, stars_value );
                         if ( !submit_ok )
                         {
@@ -825,7 +886,7 @@ void GameScene::finish_level()
                     }
 
                     Logger::info ( "GameScene: fetching leaderboard for levelId={}", level_id );
-                    fetch_result = client.fetchLeaderboardWithStatus ( level_id );
+                    fetch_result = client.fetch_leaderboard_with_status ( level_id );
                     Logger::info ( "GameScene: leaderboard for levelId={} has {} entries, status={}",
                                    level_id, fetch_result.entries.size(),
                                    static_cast<int> ( fetch_result.status ) );
@@ -846,56 +907,92 @@ void GameScene::finish_level()
                 }
             } ).detach();
 #else
-        // Web: no worker threads, so run backend sync inline.
-        try
-        {
-            LeaderboardFetchResult fetch_result;
+        const std::uint64_t token = ++leaderboard_request_token_;
+        pending_result_token_ = token;
+        const std::shared_ptr<LeaderboardAsyncState> async_state = leaderboard_async_state_;
+        const std::string auth_token = accounts_ ? accounts_->token() : std::string {};
+        const int level_id = level_id_;
+        const int score_value = score;
+        const int stars_value = stars;
+        const bool won_value = won;
 
-            if ( won )
+        auto publish_result =
+            [async_state, token, level_id] ( LeaderboardFetchResult fetch_result ) mutable
             {
-                const std::string auth_token = accounts_ ? accounts_->token() : std::string {};
-                Logger::info (
-                    "GameScene(web): submitting score levelId={} score={} stars={} token={}",
-                    level_id_, score, stars,
-                    auth_token.empty() ? "(none)" : auth_token.substr ( 0, 12 ) + "..." );
-                const bool submit_ok = online_score_client_.submitScoreWithToken (
-                    auth_token, level_id_, score, stars );
-                if ( !submit_ok )
+                Logger::info ( "GameScene(web): leaderboard for levelId={} has {} entries, status={}",
+                               level_id,
+                               fetch_result.entries.size(),
+                               static_cast<int> ( fetch_result.status ) );
+                std::lock_guard<std::mutex> lock ( async_state->mutex );
+                if ( token >= async_state->ready_token )
                 {
-                    Logger::info ( "GameScene(web): backend submit failed, still fetching leaderboard" );
+                    async_state->ready_token = token;
+                    async_state->ready_entries = std::move ( fetch_result.entries );
+                    async_state->ready_status = fetch_result.status;
+                    async_state->ready = true;
                 }
-            }
+            };
 
-            Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id_ );
-            fetch_result = online_score_client_.fetchLeaderboardWithStatus ( level_id_ );
-            Logger::info (
-                "GameScene(web): leaderboard for levelId={} has {} entries, status={}",
-                level_id_, fetch_result.entries.size(),
-                static_cast<int> ( fetch_result.status ) );
-
-            last_result_.leaderboard  = std::move ( fetch_result.entries );
-            last_result_.fetch_status = fetch_result.status;
-        }
-        catch ( const std::exception& e )
+        if ( won_value )
         {
-            Logger::error ( "GameScene(web): failed to sync leaderboard: {}", e.what() );
-            last_result_.leaderboard.clear();
-            last_result_.fetch_status = LeaderboardFetchStatus::Unavailable;
-        }
+            Logger::info (
+                "GameScene(web): submitting score levelId={} score={} stars={} auth={}",
+                level_id,
+                score_value,
+                stars_value,
+                auth_token.empty() ? "guest" : "logged-in" );
 
-        leaderboard_applied_ = true;
+            OnlineScoreClient client = online_score_client_;
+            client.submit_score_with_token_async (
+                auth_token,
+                level_id,
+                score_value,
+                stars_value,
+                [client = std::move ( client ),
+                 level_id,
+                 publish_result = std::move ( publish_result )] ( bool submit_ok ) mutable
+                {
+                    if ( !submit_ok )
+                    {
+                        Logger::info (
+                            "GameScene(web): backend submit failed, still fetching leaderboard" );
+                    }
+
+                    Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id );
+                    client.fetch_leaderboard_with_status_async (
+                        level_id,
+                        [publish_result = std::move ( publish_result )]
+                        ( LeaderboardFetchResult fetch_result ) mutable
+                        {
+                            publish_result ( std::move ( fetch_result ) );
+                        } );
+                } );
+        }
+        else
+        {
+            OnlineScoreClient client = online_score_client_;
+            Logger::info ( "GameScene(web): fetching leaderboard for levelId={}", level_id );
+            client.fetch_leaderboard_with_status_async (
+                level_id,
+                [publish_result = std::move ( publish_result )]
+                ( LeaderboardFetchResult fetch_result ) mutable
+                {
+                    publish_result ( std::move ( fetch_result ) );
+                } );
+        }
 #endif
     }
 
     pending_scene_ = SceneId::Result;
 }
 
+// #=# Events / Runtime Bridge #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 bool GameScene::poll_result_update()
 {
     if ( leaderboard_applied_ || pending_result_token_ == 0 )
         return false;
 
-#ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock ( leaderboard_async_state_->mutex );
     if ( !leaderboard_async_state_->ready
          || leaderboard_async_state_->ready_token != pending_result_token_ )
@@ -907,14 +1004,11 @@ bool GameScene::poll_result_update()
     last_result_.fetch_status  = leaderboard_async_state_->ready_status;
     leaderboard_applied_ = true;
     return true;
-#else
-    return false;
-#endif
 }
 
 void GameScene::process_events()
 {
-    auto fresh_events = physics_.drainEvents();
+    auto fresh_events = physics_.drain_events();
     for ( auto& ev : fresh_events )
     {
         pending_events_.push_back ( std::move ( ev ) );
@@ -937,6 +1031,8 @@ void GameScene::process_events()
     int collision_vfx_budget = std::max ( 3, static_cast<int> ( std::round ( 12.f * quality ) ) );
     int destroyed_vfx_budget = std::max ( 3, static_cast<int> ( std::round ( 8.f * quality ) ) );
     int ability_vfx_budget = std::max ( 2, static_cast<int> ( std::round ( 8.f * quality ) ) );
+    int impact_outcome_vfx_budget = std::max (
+        2, static_cast<int> ( std::round ( 7.f * quality ) ) );
 
     int processed_events = 0;
     while ( processed_events < events_budget && !pending_events_.empty() )
@@ -946,7 +1042,11 @@ void GameScene::process_events()
         ++processed_events;
 
         std::visit (
-            [this, &collision_vfx_budget, &destroyed_vfx_budget, &ability_vfx_budget]
+            [this,
+             &collision_vfx_budget,
+             &destroyed_vfx_budget,
+             &ability_vfx_budget,
+             &impact_outcome_vfx_budget]
             ( const auto& e )
             {
                 using T = std::decay_t<decltype ( e )>;
@@ -1137,6 +1237,49 @@ void GameScene::process_events()
                     impact_flash_ =
                         std::max ( impact_flash_, profile.destroyFlashBoost );
                 }
+                else if constexpr ( std::is_same_v<T, ImpactResolvedEvent> )
+                {
+                    last_impact_outcome_ = e.outcome;
+                    last_impact_speed_before_mps_ = e.speedBeforeMps;
+                    last_impact_speed_after_mps_ = e.speedAfterMps;
+                    last_impact_age_sec_ = 0.0f;
+
+                    if ( impact_outcome_vfx_budget <= 0 )
+                        return;
+                    --impact_outcome_vfx_budget;
+
+                    const platform::Vec2f pos ( e.contactPointPx.x, e.contactPointPx.y );
+                    if ( e.outcome == ImpactOutcome::BrokenCarryThrough )
+                    {
+                        particles_.emit_ring (
+                            pos, 12, platform::Color ( 186, 255, 232, 210 ),
+                            126.f, 0.24f, 3.5f );
+                        particles_.emit_shards (
+                            pos, 10, platform::Color ( 150, 244, 214, 198 ),
+                            146.f, 0.30f, 2.8f, 540.f );
+                        shake_time_ = std::max ( shake_time_, 0.08f );
+                        shake_strength_ = std::max ( shake_strength_, 3.3f );
+                        impact_flash_ = std::max ( impact_flash_, 0.09f );
+                    }
+                    else if ( e.outcome == ImpactOutcome::Blocked )
+                    {
+                        particles_.emit (
+                            pos, 8, platform::Color ( 255, 188, 148, 204 ),
+                            112.f, 0.22f, 2.9f );
+                        particles_.emit_ring (
+                            pos, 9, platform::Color ( 255, 166, 122, 190 ),
+                            96.f, 0.20f, 3.0f );
+                        shake_time_ = std::max ( shake_time_, 0.09f );
+                        shake_strength_ = std::max ( shake_strength_, 4.1f );
+                        impact_flash_ = std::max ( impact_flash_, 0.08f );
+                    }
+                    else
+                    {
+                        particles_.emit (
+                            pos, 4, platform::Color ( 194, 212, 255, 164 ),
+                            72.f, 0.18f, 2.5f );
+                    }
+                }
                 else if constexpr ( std::is_same_v<T, AbilityActivatedEvent> )
                 {
                     if ( ability_vfx_budget <= 0 )
@@ -1242,6 +1385,8 @@ void GameScene::process_events()
     }
 }
 
+// #=# Scene Interface (Input) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 SceneId GameScene::poll_pending_scene()
 {
     if ( pending_scene_ != SceneId::None )
@@ -1325,10 +1470,13 @@ SceneId GameScene::handle_input ( const platform::Event& event )
     return SceneId::None;
 }
 
+// #=# Scene Interface (Update) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 void GameScene::update()
 {
     const float raw_dt = frame_clock_.restart().asSeconds();
     const float dt = std::clamp ( raw_dt, 0.0f, 1.0f / 30.0f );
+    last_impact_age_sec_ = std::min ( 999.0f, last_impact_age_sec_ + dt );
 
     const float perf_dt = std::clamp ( raw_dt, 1.0f / 240.0f, 0.25f );
     smoothed_dt_sec_ = smoothed_dt_sec_ * 0.90f + perf_dt * 0.10f;
@@ -1407,9 +1555,9 @@ void GameScene::update()
 
     particles_.update ( dt );
 
-    physics_.processCommands ( command_queue_ );
+    physics_.process_commands ( command_queue_ );
     physics_.step ( dt );
-    const WorldSnapshot new_snap = physics_.getSnapshot();
+    const WorldSnapshot new_snap = physics_.get_snapshot();
     // Discard stale Win/Lose snapshots from the previous level until physics
     // confirms the new level is Running.
     if ( !snapshot_ready_ )
@@ -1505,6 +1653,8 @@ void GameScene::update()
     hud_text_.setString ( "Score: " + std::to_string ( snapshot_.score )
                           + "   [Space] Ability   [Backspace] Menu" );
 }
+
+// #=# Scene Interface (Render) #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void GameScene::render ( platform::Window& window )
 {
@@ -1774,9 +1924,18 @@ void GameScene::render ( platform::Window& window )
 
     if ( show_perf_overlay_ )
     {
-        perf_text_.setString (
+        std::string perf_overlay =
             std::to_string ( static_cast<int> ( std::round ( smoothed_fps_ ) ) )
-            + " fps" );
+            + " fps";
+        if ( last_impact_age_sec_ <= 2.5f )
+        {
+            perf_overlay += "\nimpact: "
+                            + make_impact_debug_line (
+                                last_impact_outcome_,
+                                last_impact_speed_before_mps_,
+                                last_impact_speed_after_mps_ );
+        }
+        perf_text_.setString ( perf_overlay );
         const auto bounds = perf_text_.getLocalBounds();
         perf_text_.setPosition ( {
             static_cast<float> ( window_size.x ) - bounds.size.x - 8.0f,
@@ -1935,8 +2094,21 @@ void GameScene::render ( platform::Window& window )
     {
         const std::string fps_str =
             std::to_string ( static_cast<int> ( std::round ( smoothed_fps_ ) ) ) + " fps";
+        const int fps_w = MeasureText ( fps_str.c_str(), 11 );
         DrawText ( fps_str.c_str(),
-                   static_cast<int> ( window_size.x ) - 60, 6, 11, WHITE );
+                   static_cast<int> ( window_size.x ) - fps_w - 8,
+                   6, 11, WHITE );
+        if ( last_impact_age_sec_ <= 2.5f )
+        {
+            const std::string impact_str = "impact: " + make_impact_debug_line (
+                last_impact_outcome_,
+                last_impact_speed_before_mps_,
+                last_impact_speed_after_mps_ );
+            const int impact_w = MeasureText ( impact_str.c_str(), 11 );
+            DrawText ( impact_str.c_str(),
+                       static_cast<int> ( window_size.x ) - impact_w - 8,
+                       20, 11, impact_outcome_color ( last_impact_outcome_ ).to_rl() );
+        }
     }
 #endif
 }

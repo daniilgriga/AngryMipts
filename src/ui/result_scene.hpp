@@ -1,6 +1,17 @@
+// ============================================================
+// result_scene.hpp — Post-level result scene interface.
+// Part of: angry::ui
+//
+// Declares result-screen models and scene API:
+//   * Stores win/score/stars summary for current level
+//   * Carries leaderboard payload and fetch status
+//   * Renders retry/menu actions and animated star display
+//   * Exposes setters for scene-manager handoff from gameplay
+// ============================================================
+
 #pragma once
 #include "data/account_service.hpp"
-#include "data/OnlineScoreClient.hpp"
+#include "data/online_score_client.hpp"
 #include "scene.hpp"
 
 #include <vector>
@@ -18,6 +29,8 @@ struct LevelResult
     std::vector<LeaderboardEntry> leaderboard;
 };
 
+// Shows post-level outcome summary and leaderboard state, and
+// handles retry/menu navigation from the result screen.
 class ResultScene : public Scene
 {
 private:

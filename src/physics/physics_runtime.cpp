@@ -1,14 +1,27 @@
+// ============================================================
+// physics_runtime.cpp — Physics mode facade implementation.
+// Part of: angry::physics
+//
+// Implements runtime dispatch between backends:
+//   * Starts/stops worker thread in threaded mode
+//   * Forwards level registration/loading and commands
+//   * Runs direct stepping only in single-threaded mode
+//   * Exposes snapshot/event reads through one interface
+// ============================================================
+
 #include "physics_runtime.hpp"
 
 namespace angry
 {
+
+// #=# Construction / Destruction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 PhysicsRuntime::PhysicsRuntime(PhysicsMode mode)
     : mode_(mode)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        threadedEngine_.start();
+        threaded_engine_.start();
     }
 }
 
@@ -16,44 +29,46 @@ PhysicsRuntime::~PhysicsRuntime()
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        threadedEngine_.stop();
+        threaded_engine_.stop();
     }
 }
 
-void PhysicsRuntime::registerLevel(const LevelData& level)
+// #=# Public API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsRuntime::register_level(const LevelData& level)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        threadedEngine_.registerLevel(level);
+        threaded_engine_.register_level(level);
         return;
     }
 
-    singleEngine_.registerLevel(level);
+    single_engine_.register_level(level);
 }
 
-void PhysicsRuntime::loadLevel(const LevelData& level)
+void PhysicsRuntime::load_level(const LevelData& level)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        threadedEngine_.loadLevel(level);
+        threaded_engine_.load_level(level);
         return;
     }
 
-    singleEngine_.loadLevel(level);
+    single_engine_.load_level(level);
 }
 
-void PhysicsRuntime::processCommands(ThreadSafeQueue<Command>& cmdQueue)
+void PhysicsRuntime::process_commands(ThreadSafeQueue<Command>& cmdQueue)
 {
     if (mode_ == PhysicsMode::Threaded)
     {
         while (const std::optional<Command> cmd = cmdQueue.try_pop())
         {
-            threadedEngine_.pushCommand(*cmd);
+            threaded_engine_.push_command(*cmd);
         }
         return;
     }
 
-    singleEngine_.processCommands(cmdQueue);
+    single_engine_.process_commands(cmdQueue);
 }
 
 void PhysicsRuntime::step(float dt)
@@ -65,28 +80,30 @@ void PhysicsRuntime::step(float dt)
         return;
     }
 
-    singleEngine_.step(dt);
+    single_engine_.step(dt);
 }
 
-WorldSnapshot PhysicsRuntime::getSnapshot() const
+WorldSnapshot PhysicsRuntime::get_snapshot() const
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        return threadedEngine_.readSnapshot();
+        return threaded_engine_.read_snapshot();
     }
 
-    return singleEngine_.getSnapshot();
+    return single_engine_.get_snapshot();
 }
 
-std::vector<Event> PhysicsRuntime::drainEvents()
+std::vector<Event> PhysicsRuntime::drain_events()
 {
     if (mode_ == PhysicsMode::Threaded)
     {
-        return threadedEngine_.drainEvents();
+        return threaded_engine_.drain_events();
     }
 
-    return singleEngine_.drainEvents();
+    return single_engine_.drain_events();
 }
+
+// #=# Accessors #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 PhysicsMode PhysicsRuntime::mode() const
 {

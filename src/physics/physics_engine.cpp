@@ -1,3 +1,20 @@
+// ============================================================
+// physics_engine.cpp — Box2D simulation core for AngryMipts.
+// Part of: angry::physics
+//
+// Implements the full physics pipeline for a single level:
+//   * Creates Box2D world, ground, walls, blocks, targets
+//   * Steps simulation with clamped dt, processes contact damage
+//   * Handles projectile launch, abilities (Splitter, Dasher,
+//     Bomber, Dropper, Boomerang, Bubbler, Inflater, Heavy)
+//   * Tracks block HP, destruction, scoring, and win/lose state
+//   * Produces immutable WorldSnapshot each frame for rendering
+//
+// All coordinates are in pixels (Px suffix) unless explicitly
+// converted to Box2D meters via pxToWorld / worldToPx helpers
+// from physics_units.hpp.
+// ============================================================
+
 #include "physics_engine.hpp"
 
 #include "physics_units.hpp"
@@ -6,8 +23,11 @@
 #include <box2d/box2d.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <type_traits>
@@ -15,18 +35,30 @@
 
 namespace angry
 {
+
+// #=# Constants & Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 namespace
 {
 
 constexpr float kDegreesPerRadian = 57.2957795f;
+constexpr float kRadiansPerDegree = 0.0174532925f;
 constexpr float kSlingshotForkYOffsetPx = 60.0f;
 constexpr float kProjectileSleepLinearSpeedMps = 0.6f;
 constexpr float kProjectileSleepAngularSpeedRad = 1.2f;
 constexpr int kProjectileSettledFramesNeeded = 15;
 constexpr float kProjectileSettledRemoveDelaySec = 1.5f;
 constexpr float kDamageMinSpeedMps = 1.0f;
+constexpr float kCollisionEventMinSpeedMps = 0.7f;
 constexpr float kDamageScale = 16.0f;
 constexpr float kBlockVsBlockDamageMultiplier = 0.15f;
+// Stage 0 baseline tuning for projectile impact carry-through patch.
+constexpr float kBreakCarryMinSpeedMps = 2.2f;
+constexpr float kBreakCarryRetainTangential = 0.80f;
+constexpr float kBreakCarryRetainNormal = 0.35f;
+constexpr float kBreakCarryImpulseBoostMps = 0.8f;
+constexpr float kPostBreakDampingGraceSec = 0.12f;
+constexpr float kBreakCarryMaxSpeedMps = 28.0f;
 constexpr float kFloorImpactDamageMultiplier = 0.75f;
 constexpr float kFloorContactMinNormalY = 0.75f;
 constexpr float kFloorContactBandTopPx = 30.0f;
@@ -39,25 +71,46 @@ constexpr float kBubblerLiftLinearDamping = 1.1f;
 constexpr float kBubblerLiftAngularDamping = 2.0f;
 constexpr float kBubblerBurstDownImpulseMps = 1.8f;
 constexpr float kBubblerMaxUpwardSpeedMps = 3.8f;
+constexpr float kBoomerangDelaySec = 0.132f;
+constexpr float kBoomerangReturnDurationSec = 1.21f;
+constexpr float kBoomerangMinReturnDistancePx = 132.0f;
+constexpr float kBoomerangMainAccelMps2 = 28.6f;
+constexpr float kBoomerangCurveAccelMps2 = 8.8f;
+constexpr float kBoomerangMaxReturnSpeedMps = 12.1f;
+constexpr float kBoomerangReturnLinearDamping = 0.605f;
+constexpr float kBoomerangReturnGravityScale = 0.902f;
+constexpr float kBoomerangReturnSpinRad = 17.6f;
 
-inline float clampValue(float value, float minVal, float maxVal)
+inline float clamp_value(float value, float minVal, float maxVal)
 {
     return std::max(minVal, std::min(value, maxVal));
 }
 
-inline bool isOutOfBoundsPx(const Vec2& positionPx)
+inline bool is_out_of_bounds_px(const Vec2& positionPx)
 {
     return positionPx.x < -500.0f
         || positionPx.x > 4500.0f
         || positionPx.y > 3000.0f;
 }
 
-inline bool bodyIdEquals(b2BodyId a, b2BodyId b)
+inline bool body_id_equals(b2BodyId a, b2BodyId b)
 {
     return B2_ID_EQUALS(a, b);
 }
 
-inline Vec2 rotatePxVector(const Vec2& v, float angleRad)
+inline std::uint64_t body_id_key(b2BodyId id)
+{
+    return (static_cast<std::uint64_t>(id.world0) << 48)
+        ^ (static_cast<std::uint64_t>(id.revision) << 32)
+        ^ static_cast<std::uint64_t>(id.index1);
+}
+
+inline float vec2_length(b2Vec2 v)
+{
+    return std::sqrt(v.x * v.x + v.y * v.y);
+}
+
+inline Vec2 rotate_px_vector(const Vec2& v, float angleRad)
 {
     const float c = std::cos(angleRad);
     const float s = std::sin(angleRad);
@@ -67,7 +120,7 @@ inline Vec2 rotatePxVector(const Vec2& v, float angleRad)
     };
 }
 
-inline float materialDamageMultiplier(Material material)
+inline float material_damage_multiplier(Material material)
 {
     switch (material)
     {
@@ -84,7 +137,7 @@ inline float materialDamageMultiplier(Material material)
     return 1.0f;
 }
 
-inline float floorHitMaxDamageFraction(Material material)
+inline float floor_hit_max_damage_fraction(Material material)
 {
     switch (material)
     {
@@ -101,22 +154,26 @@ inline float floorHitMaxDamageFraction(Material material)
     return 1.0f;
 }
 
-inline bool isDestructibleKind(ObjectSnapshot::Kind kind)
+inline bool is_destructible_kind(ObjectSnapshot::Kind kind)
 {
     return kind == ObjectSnapshot::Kind::Block || kind == ObjectSnapshot::Kind::Target;
 }
 
-inline float projectileDamageMultiplier(ProjectileType projectileType)
+inline float projectile_damage_multiplier(ProjectileType projectileType)
 {
     if (projectileType == ProjectileType::Heavy)
     {
         return 1.35f;
     }
+    if (projectileType == ProjectileType::Boomerang)
+    {
+        return 0.77f;
+    }
 
     return 1.0f;
 }
 
-inline int blockDestroyedScore(Material material)
+inline int block_destroyed_score(Material material)
 {
     switch (material)
     {
@@ -133,6 +190,128 @@ inline int blockDestroyedScore(Material material)
     return 20;
 }
 
+struct ProjectileImpactOutcome
+{
+    bool willBreak = false;
+    float blockDamage = 0.0f;
+    bool hasVelocityCorrection = false;
+    b2Vec2 correctedProjectileVelocity = b2Vec2{0.0f, 0.0f};
+};
+
+inline ProjectileImpactOutcome resolve_projectile_impact_outcome(
+    float baseDamage,
+    float blockHp,
+    Material blockMaterial,
+    ProjectileType projectileType,
+    b2Vec2 projectileVelocity,
+    b2Vec2 projectileToBlockNormal)
+{
+    ProjectileImpactOutcome outcome;
+    outcome.blockDamage = baseDamage
+        * projectile_damage_multiplier(projectileType)
+        * material_damage_multiplier(blockMaterial);
+    if (!std::isfinite(outcome.blockDamage) || outcome.blockDamage < 0.0f)
+    {
+        outcome.blockDamage = 0.0f;
+    }
+    outcome.willBreak = outcome.blockDamage >= std::max(0.0f, blockHp);
+
+    if (outcome.willBreak)
+    {
+        const float speed = std::sqrt(
+            projectileVelocity.x * projectileVelocity.x
+            + projectileVelocity.y * projectileVelocity.y);
+        if (std::isfinite(speed) && speed > 0.0001f)
+        {
+            // Build safe contact normal and decompose velocity.
+            float nx = projectileToBlockNormal.x;
+            float ny = projectileToBlockNormal.y;
+            const float nLen = std::sqrt(nx * nx + ny * ny);
+            if (nLen > 0.0001f)
+            {
+                nx /= nLen;
+                ny /= nLen;
+            }
+            else
+            {
+                nx = projectileVelocity.x / speed;
+                ny = projectileVelocity.y / speed;
+            }
+
+            const float vn = projectileVelocity.x * nx + projectileVelocity.y * ny;
+            const b2Vec2 vNormal = b2Vec2{nx * vn, ny * vn};
+            const b2Vec2 vTangential = b2Vec2{
+                projectileVelocity.x - vNormal.x,
+                projectileVelocity.y - vNormal.y};
+
+            b2Vec2 correctedVelocity = b2Vec2{
+                vTangential.x * kBreakCarryRetainTangential + vNormal.x * kBreakCarryRetainNormal,
+                vTangential.y * kBreakCarryRetainTangential + vNormal.y * kBreakCarryRetainNormal};
+
+            float correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            const b2Vec2 velocityDir = b2Vec2{
+                projectileVelocity.x / speed,
+                projectileVelocity.y / speed};
+
+            if (correctedSpeed < kBreakCarryMinSpeedMps)
+            {
+                const float add = kBreakCarryMinSpeedMps - correctedSpeed;
+                correctedVelocity.x += velocityDir.x * add;
+                correctedVelocity.y += velocityDir.y * add;
+                correctedSpeed = kBreakCarryMinSpeedMps;
+            }
+
+            correctedVelocity.x += velocityDir.x * kBreakCarryImpulseBoostMps;
+            correctedVelocity.y += velocityDir.y * kBreakCarryImpulseBoostMps;
+
+            correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            if (correctedSpeed > kBreakCarryMaxSpeedMps)
+            {
+                const float scale = kBreakCarryMaxSpeedMps / correctedSpeed;
+                correctedVelocity.x *= scale;
+                correctedVelocity.y *= scale;
+            }
+
+            if (std::isfinite(correctedVelocity.x) && std::isfinite(correctedVelocity.y))
+            {
+                outcome.hasVelocityCorrection = true;
+                outcome.correctedProjectileVelocity = correctedVelocity;
+            }
+        }
+    }
+
+    return outcome;
+}
+
+inline float compute_bottom_offset_px(const BlockData& block)
+{
+    if (block.shape == BlockShape::Circle || block.radiusPx > 0.0f)
+    {
+        return block.radiusPx;
+    }
+
+    if (block.shape == BlockShape::Triangle && block.triangleLocalVerticesPx.size() == 3)
+    {
+        const float angleRad = block.angleDeg * kRadiansPerDegree;
+        const float c = std::cos(angleRad);
+        const float s = std::sin(angleRad);
+
+        float maxY = -std::numeric_limits<float>::infinity();
+        for (const Vec2& vertex : block.triangleLocalVerticesPx)
+        {
+            const float rotatedY = vertex.x * s + vertex.y * c;
+            maxY = std::max(maxY, rotatedY);
+        }
+        return std::isfinite(maxY) ? maxY : (block.sizePx.y * 0.5f);
+    }
+
+    return block.sizePx.y * 0.5f;
+}
+
 struct StarThresholds
 {
     int one = 1;
@@ -140,7 +319,7 @@ struct StarThresholds
     int three = 3;
 };
 
-inline int sumTargetScore(const LevelData& level)
+inline int sum_target_score(const LevelData& level)
 {
     int scoreSum = 0;
     for (const TargetData& target : level.targets)
@@ -150,22 +329,22 @@ inline int sumTargetScore(const LevelData& level)
     return scoreSum;
 }
 
-inline StarThresholds buildStarThresholds(const LevelData& level)
+inline StarThresholds build_star_thresholds(const LevelData& level)
 {
     StarThresholds thresholds;
-    thresholds.one = std::max(1, sumTargetScore(level));
-    thresholds.two = std::max(level.meta.star2Threshold, thresholds.one + 1);
-    thresholds.three = std::max(level.meta.star3Threshold, thresholds.two + 1);
+    thresholds.one = std::max(1, sum_target_score(level));
+    thresholds.two = std::max(level.meta.star_2_threshold, thresholds.one + 1);
+    thresholds.three = std::max(level.meta.star_3_threshold, thresholds.two + 1);
     return thresholds;
 }
 
-inline int calculateStarsForResult(
+inline int calculate_stars_for_result(
     const LevelData& level,
     const ScoreSystem& scoreSystem,
     LevelStatus status)
 {
-    const StarThresholds thresholds = buildStarThresholds(level);
-    int stars = scoreSystem.starsFor(thresholds.one, thresholds.two, thresholds.three);
+    const StarThresholds thresholds = build_star_thresholds(level);
+    int stars = scoreSystem.stars_for(thresholds.one, thresholds.two, thresholds.three);
 
     if (status == LevelStatus::Win)
     {
@@ -176,16 +355,19 @@ inline int calculateStarsForResult(
     return std::clamp(stars, 0, 3);
 }
 
-inline bool isBodyOnSurface(b2BodyId bodyId)
+inline bool is_body_on_surface(b2BodyId bodyId)
 {
-    const int contactCapacity = b2Body_GetContactCapacity(bodyId);
-    if (contactCapacity <= 0)
+    if (b2Body_GetContactCapacity(bodyId) <= 0)
     {
         return false;
     }
 
-    std::vector<b2ContactData> contacts(static_cast<size_t>(contactCapacity));
-    const int contactCount = b2Body_GetContactData(bodyId, contacts.data(), contactCapacity);
+    // Avoid per-frame heap allocations in hot physics loop.
+    std::array<b2ContactData, 8> contacts{};
+    const int contactCount = b2Body_GetContactData(
+        bodyId,
+        contacts.data(),
+        static_cast<int>(contacts.size()));
     for (int i = 0; i < contactCount; ++i)
     {
         if (contacts[static_cast<size_t>(i)].manifold.pointCount > 0)
@@ -201,7 +383,7 @@ inline bool isBodyOnSurface(b2BodyId bodyId)
     return false;
 }
 
-inline void applySurfaceDamping(b2BodyId bodyId, float linearFactor, float angularFactor)
+inline void apply_surface_damping(b2BodyId bodyId, float linearFactor, float angularFactor)
 {
     b2Vec2 linearVel = b2Body_GetLinearVelocity(bodyId);
     linearVel.x *= linearFactor;
@@ -221,49 +403,53 @@ inline void applySurfaceDamping(b2BodyId bodyId, float linearFactor, float angul
 
 }  // namespace
 
+// #=# Construction / Destruction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 PhysicsEngine::~PhysicsEngine()
 {
-    if (B2_IS_NON_NULL(worldId_))
+    if (B2_IS_NON_NULL(world_id_))
     {
-        b2DestroyWorld(worldId_);
-        worldId_ = b2_nullWorldId;
+        b2DestroyWorld(world_id_);
+        world_id_ = b2_nullWorldId;
     }
 }
 
-void PhysicsEngine::registerLevel(const LevelData& level)
+// #=# Level Lifecycle API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsEngine::register_level(const LevelData& level)
 {
-    levelRegistry_[level.meta.id] = level;
+    level_registry_[level.meta.id] = level;
 }
 
-void PhysicsEngine::loadLevel(const LevelData& level)
+void PhysicsEngine::load_level(const LevelData& level)
 {
-    if (B2_IS_NON_NULL(worldId_))
+    if (B2_IS_NON_NULL(world_id_))
     {
-        b2DestroyWorld(worldId_);
-        worldId_ = b2_nullWorldId;
+        b2DestroyWorld(world_id_);
+        world_id_ = b2_nullWorldId;
     }
 
-    currentLevel_ = level;
-    registerLevel(level);
-    levelLoaded_ = true;
+    current_level_ = level;
+    register_level(level);
+    level_loaded_ = true;
     paused_ = false;
 
-    nextId_ = 1;
-    nextProjectileIndex_ = 0;
-    activeProjectileBodyId_ = b2_nullBodyId;
-    activeProjectileSettledFrames_ = 0;
-    activeProjectileSettledTimeSec_ = 0.0f;
-    activeProjectileType_ = ProjectileType::Standard;
-    activeProjectileAbilityUsed_ = false;
-    levelYOffsetPx_ = 0.0f;
-    supportBottomPx_ = 0.0f;
+    next_id_ = 1;
+    next_projectile_index_ = 0;
+    active_projectile_body_id_ = b2_nullBodyId;
+    active_projectile_settled_frames_ = 0;
+    active_projectile_settled_time_sec_ = 0.0f;
+    active_projectile_type_ = ProjectileType::Standard;
+    active_projectile_ability_used_ = false;
+    level_y_offset_px_ = 0.0f;
+    support_bottom_px_ = 0.0f;
     events_.clear();
-    pendingCommands_.clear();
+    pending_commands_.clear();
     bodies_.clear();
 
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = b2Vec2{0.0f, 9.81f};
-    worldId_ = b2CreateWorld(&worldDef);
+    world_id_ = b2CreateWorld(&worldDef);
 
     snapshot_.objects.clear();
     snapshot_.slingshot.basePx = level.slingshot.positionPx;
@@ -274,8 +460,8 @@ void PhysicsEngine::loadLevel(const LevelData& level)
         ? ProjectileType::Standard
         : level.projectiles.front().type;
 
-    scoreSystem_.reset();
-    snapshot_.score = scoreSystem_.score();
+    score_system_.reset();
+    snapshot_.score = score_system_.score();
     snapshot_.shotsRemaining = static_cast<int>(level.projectiles.size());
     snapshot_.totalShots = level.meta.totalShots > 0
         ? level.meta.totalShots
@@ -287,41 +473,35 @@ void PhysicsEngine::loadLevel(const LevelData& level)
     float supportBottomPx = kGroundTopYpx;
     for (const BlockData& block : level.blocks)
     {
-        float bottomPx = block.positionPx.y;
-        if (block.radiusPx > 0.0f)
-        {
-            bottomPx += block.radiusPx;
-        }
-        else
-        {
-            bottomPx += block.sizePx.y * 0.5f;
-        }
+        const float bottomPx = block.positionPx.y + compute_bottom_offset_px(block);
         supportBottomPx = std::max(supportBottomPx, bottomPx);
     }
 
-    supportBottomPx_ = supportBottomPx;
-    groundTopYpx_ = kGroundTopYpx;
-    levelYOffsetPx_ = groundTopYpx_ - supportBottomPx_;
-    createGround(groundTopYpx_);
+    support_bottom_px_ = supportBottomPx;
+    ground_top_ypx_ = kGroundTopYpx;
+    level_y_offset_px_ = ground_top_ypx_ - support_bottom_px_;
+    create_ground(ground_top_ypx_);
 
     for (const BlockData& block : level.blocks)
     {
-        createBlockBody(block);
+        create_block_body(block);
     }
 
     for (const TargetData& target : level.targets)
     {
-        createTargetBody(target);
+        create_target_body(target);
     }
 
-    refreshSnapshot();
+    refresh_snapshot();
 }
 
-void PhysicsEngine::processCommands(ThreadSafeQueue<Command>& cmdQueue)
+// #=# Simulation Step #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+void PhysicsEngine::process_commands(ThreadSafeQueue<Command>& cmdQueue)
 {
     while (const std::optional<Command> cmd = cmdQueue.try_pop())
     {
-        pendingCommands_.push_back(*cmd);
+        pending_commands_.push_back(*cmd);
     }
 }
 
@@ -330,13 +510,13 @@ void PhysicsEngine::step(float dt)
     const auto start = std::chrono::steady_clock::now();
     const LevelStatus statusBeforeStep = snapshot_.status;
 
-    for (const Command& cmd : pendingCommands_)
+    for (const Command& cmd : pending_commands_)
     {
-        applyCommand(cmd);
+        apply_command(cmd);
     }
-    pendingCommands_.clear();
+    pending_commands_.clear();
 
-    if (!levelLoaded_ || B2_IS_NULL(worldId_))
+    if (!level_loaded_ || B2_IS_NULL(world_id_))
     {
         snapshot_.physicsStepMs = 0.0f;
         return;
@@ -348,10 +528,17 @@ void PhysicsEngine::step(float dt)
         return;
     }
 
-    const float clampedDt = clampValue(dt, 0.0f, 1.0f / 30.0f);
+    const float clampedDt = clamp_value(dt, 0.0f, 1.0f / 30.0f);
 
     for (BodyBinding& binding : bodies_)
     {
+        if (binding.kind == ObjectSnapshot::Kind::Projectile && binding.postBreakDampingGraceSec > 0.0f)
+        {
+            binding.postBreakDampingGraceSec = std::max(
+                0.0f,
+                binding.postBreakDampingGraceSec - clampedDt);
+        }
+
         if (!binding.isBubbled)
         {
             continue;
@@ -404,18 +591,159 @@ void PhysicsEngine::step(float dt)
         }
     }
 
-    b2World_Step(worldId_, clampedDt, 4);
+    for (BodyBinding& binding : bodies_)
+    {
+        if (binding.kind != ObjectSnapshot::Kind::Projectile
+            || binding.projectileType != ProjectileType::Boomerang)
+        {
+            continue;
+        }
+        if (B2_IS_NULL(binding.bodyId) || !b2Body_IsValid(binding.bodyId))
+        {
+            binding.boomerangReturnRequested = false;
+            binding.boomerangReturning = false;
+            binding.boomerangTimeSinceLaunchSec = 0.0f;
+            binding.boomerangReturnTimeSec = 0.0f;
+            continue;
+        }
+
+        binding.boomerangTimeSinceLaunchSec += clampedDt;
+
+        if (binding.boomerangReturnRequested && !binding.boomerangReturning)
+        {
+            const b2Vec2 worldPos = b2Body_GetPosition(binding.bodyId);
+            const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+            const Vec2 toStartPx = {
+                binding.boomerangStartPx.x - posPx.x,
+                binding.boomerangStartPx.y - posPx.y,
+            };
+            const float distToStartPx =
+                std::sqrt(toStartPx.x * toStartPx.x + toStartPx.y * toStartPx.y);
+
+            if (binding.boomerangTimeSinceLaunchSec >= kBoomerangDelaySec
+                && distToStartPx >= kBoomerangMinReturnDistancePx)
+            {
+                binding.boomerangReturning = true;
+                binding.boomerangReturnTimeSec = 0.0f;
+                b2Body_SetGravityScale(binding.bodyId, kBoomerangReturnGravityScale);
+                b2Body_SetLinearDamping(binding.bodyId, kBoomerangReturnLinearDamping);
+                b2Body_SetAngularDamping(binding.bodyId, 0.0f);
+                b2Body_SetAwake(binding.bodyId, true);
+
+                const float cross =
+                    binding.boomerangLaunchDir.x * toStartPx.y
+                    - binding.boomerangLaunchDir.y * toStartPx.x;
+                binding.boomerangCurveSign = cross >= 0.0f ? 1.0f : -1.0f;
+            }
+        }
+
+        if (!binding.boomerangReturning)
+        {
+            continue;
+        }
+
+        binding.boomerangReturnTimeSec += clampedDt;
+
+        const b2Vec2 worldPos = b2Body_GetPosition(binding.bodyId);
+        const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
+        Vec2 toTargetPx = {
+            binding.boomerangStartPx.x - posPx.x,
+            binding.boomerangStartPx.y - posPx.y,
+        };
+        float lenPx = std::sqrt(toTargetPx.x * toTargetPx.x + toTargetPx.y * toTargetPx.y);
+        if (lenPx < 0.001f)
+        {
+            lenPx = 0.001f;
+            toTargetPx = {-1.0f, 0.0f};
+        }
+
+        const Vec2 dirToTarget = {
+            toTargetPx.x / lenPx,
+            toTargetPx.y / lenPx,
+        };
+        const Vec2 perpDir = {
+            -dirToTarget.y * binding.boomerangCurveSign,
+            dirToTarget.x * binding.boomerangCurveSign,
+        };
+
+        const float mass = std::max(0.01f, b2Body_GetMass(binding.bodyId));
+        const b2Vec2 force = {
+            mass * (dirToTarget.x * kBoomerangMainAccelMps2 + perpDir.x * kBoomerangCurveAccelMps2),
+            mass * (dirToTarget.y * kBoomerangMainAccelMps2 + perpDir.y * kBoomerangCurveAccelMps2),
+        };
+        b2Body_ApplyForceToCenter(binding.bodyId, force, true);
+
+        b2Vec2 velocity = b2Body_GetLinearVelocity(binding.bodyId);
+        const float speedMps = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        if (speedMps > kBoomerangMaxReturnSpeedMps)
+        {
+            const float scale = kBoomerangMaxReturnSpeedMps / speedMps;
+            velocity.x *= scale;
+            velocity.y *= scale;
+            b2Body_SetLinearVelocity(binding.bodyId, velocity);
+        }
+
+        b2Body_SetAngularVelocity(
+            binding.bodyId,
+            binding.boomerangCurveSign * kBoomerangReturnSpinRad);
+
+        if (binding.boomerangReturnTimeSec >= kBoomerangReturnDurationSec)
+        {
+            binding.boomerangReturning = false;
+            binding.boomerangReturnRequested = false;
+            b2Body_SetGravityScale(binding.bodyId, 1.0f);
+            b2Body_SetLinearDamping(binding.bodyId, 0.0f);
+        }
+    }
+
+    b2World_Step(world_id_, clampedDt, 4);
 
     // Apply damage from contact hit events and remove destroyed bodies.
-    const b2ContactEvents contactEvents = b2World_GetContactEvents(worldId_);
+    const b2ContactEvents contactEvents = b2World_GetContactEvents(world_id_);
+    std::unordered_map<std::uint64_t, BodyBinding*> bindingByBodyId;
+    bindingByBodyId.reserve(bodies_.size());
+    for (BodyBinding& binding : bodies_)
+    {
+        if (B2_IS_NON_NULL(binding.bodyId))
+        {
+            bindingByBodyId[body_id_key(binding.bodyId)] = &binding;
+        }
+    }
+
     std::unordered_map<EntityId, float> pendingDamageById;
+    if (contactEvents.hitCount > 0)
+    {
+        pendingDamageById.reserve(static_cast<std::size_t>(contactEvents.hitCount));
+    }
+    struct PendingProjectileVelocityCorrection
+    {
+        b2BodyId projectileBodyId = b2_nullBodyId;
+        b2Vec2 correctedVelocity = b2Vec2{0.0f, 0.0f};
+        bool applyDampingGrace = false;
+    };
+    std::unordered_map<std::uint64_t, PendingProjectileVelocityCorrection> pendingProjectileCorrectionsByBody;
+    if (contactEvents.hitCount > 0)
+    {
+        pendingProjectileCorrectionsByBody.reserve(static_cast<std::size_t>(contactEvents.hitCount));
+    }
     for (int i = 0; i < contactEvents.hitCount; ++i)
     {
         const b2ContactHitEvent& hit = contactEvents.hitEvents[static_cast<size_t>(i)];
         const b2BodyId bodyA = b2Shape_GetBody(hit.shapeIdA);
         const b2BodyId bodyB = b2Shape_GetBody(hit.shapeIdB);
-        BodyBinding* bindingA = findBinding(bodyA);
-        BodyBinding* bindingB = findBinding(bodyB);
+        BodyBinding* bindingA = nullptr;
+        BodyBinding* bindingB = nullptr;
+
+        const auto itA = bindingByBodyId.find(body_id_key(bodyA));
+        if (itA != bindingByBodyId.end())
+        {
+            bindingA = itA->second;
+        }
+        const auto itB = bindingByBodyId.find(body_id_key(bodyB));
+        if (itB != bindingByBodyId.end())
+        {
+            bindingB = itB->second;
+        }
 
         const bool onlyAKnown = bindingA != nullptr && bindingB == nullptr;
         const bool onlyBKnown = bindingA == nullptr && bindingB != nullptr;
@@ -423,7 +751,7 @@ void PhysicsEngine::step(float dt)
         {
             BodyBinding* dynamicBinding = onlyAKnown ? bindingA : bindingB;
             if (dynamicBinding == nullptr
-                || !isDestructibleKind(dynamicBinding->kind)
+                || !is_destructible_kind(dynamicBinding->kind)
                 || !dynamicBinding->isDestructible
                 || dynamicBinding->isStatic)
             {
@@ -434,8 +762,8 @@ void PhysicsEngine::step(float dt)
             // Apply damage here only for impacts near the floor top.
             const Vec2 contactPointPx = worldToPx({hit.point.x, hit.point.y});
             const bool isNearFloor =
-                contactPointPx.y >= (groundTopYpx_ - kFloorContactBandTopPx)
-                && contactPointPx.y <= (groundTopYpx_ + kFloorContactBandBottomPx);
+                contactPointPx.y >= (ground_top_ypx_ - kFloorContactBandTopPx)
+                && contactPointPx.y <= (ground_top_ypx_ + kFloorContactBandBottomPx);
             const bool hasFloorLikeNormal = std::abs(hit.normal.y) >= kFloorContactMinNormalY;
             if (!isNearFloor || !hasFloorLikeNormal)
             {
@@ -450,10 +778,10 @@ void PhysicsEngine::step(float dt)
 
             const float damage =
                 effectiveSpeed * kDamageScale * kFloorImpactDamageMultiplier;
-            const float scaledDamage = damage * materialDamageMultiplier(dynamicBinding->material);
+            const float scaledDamage = damage * material_damage_multiplier(dynamicBinding->material);
             const float cappedDamage = std::min(
                 scaledDamage,
-                std::max(0.0f, dynamicBinding->hp) * floorHitMaxDamageFraction(dynamicBinding->material));
+                std::max(0.0f, dynamicBinding->hp) * floor_hit_max_damage_fraction(dynamicBinding->material));
             if (cappedDamage <= 0.0f)
             {
                 continue;
@@ -467,42 +795,195 @@ void PhysicsEngine::step(float dt)
             continue;
         }
 
-        events_.push_back(CollisionEvent{
-            bindingA->id,
-            bindingB->id,
-            hit.approachSpeed,
-            worldToPx({hit.point.x, hit.point.y})});
+        const Vec2 contactPointPx = worldToPx({hit.point.x, hit.point.y});
+        if (hit.approachSpeed >= kCollisionEventMinSpeedMps)
+        {
+            events_.push_back(CollisionEvent{
+                bindingA->id,
+                bindingB->id,
+                hit.approachSpeed,
+                contactPointPx});
+        }
+
+        const bool aIsProjectile = bindingA->kind == ObjectSnapshot::Kind::Projectile;
+        const bool bIsProjectile = bindingB->kind == ObjectSnapshot::Kind::Projectile;
+        const bool aIsDestructibleKind = is_destructible_kind(bindingA->kind);
+        const bool bIsDestructibleKind = is_destructible_kind(bindingB->kind);
+        const bool aIsDestructible = aIsDestructibleKind && bindingA->isDestructible;
+        const bool bIsDestructible = bIsDestructibleKind && bindingB->isDestructible;
+
+        auto emit_impact_event = [this, &contactPointPx](
+                                     const BodyBinding* projectile,
+                                     const BodyBinding* block,
+                                     ImpactOutcome outcome,
+                                     float speedBeforeMps,
+                                     float speedAfterMps)
+        {
+            events_.push_back(ImpactResolvedEvent{
+                projectile->id,
+                block->id,
+                outcome,
+                speedBeforeMps,
+                speedAfterMps,
+                contactPointPx});
+        };
 
         const float effectiveSpeed = std::max(0.0f, hit.approachSpeed - kDamageMinSpeedMps);
         if (effectiveSpeed <= 0.0f)
         {
+            if (aIsProjectile && bIsDestructibleKind)
+            {
+                const b2Vec2 projectileVelocity = b2Body_IsValid(bindingA->bodyId)
+                    ? b2Body_GetLinearVelocity(bindingA->bodyId)
+                    : b2Vec2{0.0f, 0.0f};
+                emit_impact_event(
+                    bindingA,
+                    bindingB,
+                    ImpactOutcome::Grazed,
+                    hit.approachSpeed,
+                    vec2_length(projectileVelocity));
+            }
+            else if (bIsProjectile && aIsDestructibleKind)
+            {
+                const b2Vec2 projectileVelocity = b2Body_IsValid(bindingB->bodyId)
+                    ? b2Body_GetLinearVelocity(bindingB->bodyId)
+                    : b2Vec2{0.0f, 0.0f};
+                emit_impact_event(
+                    bindingB,
+                    bindingA,
+                    ImpactOutcome::Grazed,
+                    hit.approachSpeed,
+                    vec2_length(projectileVelocity));
+            }
             continue;
         }
 
         const float baseDamage = effectiveSpeed * kDamageScale;
-        const bool aIsProjectile = bindingA->kind == ObjectSnapshot::Kind::Projectile;
-        const bool bIsProjectile = bindingB->kind == ObjectSnapshot::Kind::Projectile;
-        const bool aIsDestructible = isDestructibleKind(bindingA->kind) && bindingA->isDestructible;
-        const bool bIsDestructible = isDestructibleKind(bindingB->kind) && bindingB->isDestructible;
-
-        auto applyScaledDamage = [&pendingDamageById](const BodyBinding* binding, float damage)
-        {
-            const float scaledDamage = damage * materialDamageMultiplier(binding->material);
-            pendingDamageById[binding->id] += scaledDamage;
-        };
 
         if (aIsProjectile && bIsDestructible)
         {
-            applyScaledDamage(
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingA->bodyId)
+                ? b2Body_GetLinearVelocity(bindingA->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            const ProjectileImpactOutcome outcome = resolve_projectile_impact_outcome(
+                baseDamage,
+                bindingB->hp,
+                bindingB->material,
+                bindingA->projectileType,
+                projectileVelocity,
+                hit.normal);
+            pendingDamageById[bindingB->id] += outcome.blockDamage;
+            const float speedAfter = outcome.willBreak && outcome.hasVelocityCorrection
+                ? vec2_length(outcome.correctedProjectileVelocity)
+                : vec2_length(projectileVelocity);
+            emit_impact_event(
+                bindingA,
                 bindingB,
-                baseDamage * projectileDamageMultiplier(bindingA->projectileType));
+                outcome.willBreak ? ImpactOutcome::BrokenCarryThrough : ImpactOutcome::Blocked,
+                hit.approachSpeed,
+                speedAfter);
+            if (outcome.willBreak && outcome.hasVelocityCorrection)
+            {
+                const std::uint64_t key = body_id_key(bindingA->bodyId);
+                PendingProjectileVelocityCorrection candidate{
+                    bindingA->bodyId,
+                    outcome.correctedProjectileVelocity,
+                    true};
+                const auto [it, inserted] = pendingProjectileCorrectionsByBody.emplace(key, candidate);
+                if (!inserted)
+                {
+                    const float prevSpeed2 =
+                        it->second.correctedVelocity.x * it->second.correctedVelocity.x
+                        + it->second.correctedVelocity.y * it->second.correctedVelocity.y;
+                    const float newSpeed2 =
+                        candidate.correctedVelocity.x * candidate.correctedVelocity.x
+                        + candidate.correctedVelocity.y * candidate.correctedVelocity.y;
+                    if (newSpeed2 > prevSpeed2)
+                    {
+                        it->second = candidate;
+                    }
+                    else
+                    {
+                        it->second.applyDampingGrace = it->second.applyDampingGrace || candidate.applyDampingGrace;
+                    }
+                }
+            }
             continue;
         }
         if (bIsProjectile && aIsDestructible)
         {
-            applyScaledDamage(
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingB->bodyId)
+                ? b2Body_GetLinearVelocity(bindingB->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            const ProjectileImpactOutcome outcome = resolve_projectile_impact_outcome(
+                baseDamage,
+                bindingA->hp,
+                bindingA->material,
+                bindingB->projectileType,
+                projectileVelocity,
+                b2Vec2{-hit.normal.x, -hit.normal.y});
+            pendingDamageById[bindingA->id] += outcome.blockDamage;
+            const float speedAfter = outcome.willBreak && outcome.hasVelocityCorrection
+                ? vec2_length(outcome.correctedProjectileVelocity)
+                : vec2_length(projectileVelocity);
+            emit_impact_event(
+                bindingB,
                 bindingA,
-                baseDamage * projectileDamageMultiplier(bindingB->projectileType));
+                outcome.willBreak ? ImpactOutcome::BrokenCarryThrough : ImpactOutcome::Blocked,
+                hit.approachSpeed,
+                speedAfter);
+            if (outcome.willBreak && outcome.hasVelocityCorrection)
+            {
+                const std::uint64_t key = body_id_key(bindingB->bodyId);
+                PendingProjectileVelocityCorrection candidate{
+                    bindingB->bodyId,
+                    outcome.correctedProjectileVelocity,
+                    true};
+                const auto [it, inserted] = pendingProjectileCorrectionsByBody.emplace(key, candidate);
+                if (!inserted)
+                {
+                    const float prevSpeed2 =
+                        it->second.correctedVelocity.x * it->second.correctedVelocity.x
+                        + it->second.correctedVelocity.y * it->second.correctedVelocity.y;
+                    const float newSpeed2 =
+                        candidate.correctedVelocity.x * candidate.correctedVelocity.x
+                        + candidate.correctedVelocity.y * candidate.correctedVelocity.y;
+                    if (newSpeed2 > prevSpeed2)
+                    {
+                        it->second = candidate;
+                    }
+                    else
+                    {
+                        it->second.applyDampingGrace = it->second.applyDampingGrace || candidate.applyDampingGrace;
+                    }
+                }
+            }
+            continue;
+        }
+        if (aIsProjectile && bIsDestructibleKind)
+        {
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingA->bodyId)
+                ? b2Body_GetLinearVelocity(bindingA->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            emit_impact_event(
+                bindingA,
+                bindingB,
+                ImpactOutcome::Blocked,
+                hit.approachSpeed,
+                vec2_length(projectileVelocity));
+            continue;
+        }
+        if (bIsProjectile && aIsDestructibleKind)
+        {
+            const b2Vec2 projectileVelocity = b2Body_IsValid(bindingB->bodyId)
+                ? b2Body_GetLinearVelocity(bindingB->bodyId)
+                : b2Vec2{0.0f, 0.0f};
+            emit_impact_event(
+                bindingB,
+                bindingA,
+                ImpactOutcome::Blocked,
+                hit.approachSpeed,
+                vec2_length(projectileVelocity));
             continue;
         }
         if (aIsProjectile && bIsProjectile)
@@ -512,8 +993,8 @@ void PhysicsEngine::step(float dt)
         if (aIsDestructible && bIsDestructible)
         {
             const float structuralDamage = baseDamage * kBlockVsBlockDamageMultiplier;
-            applyScaledDamage(bindingA, structuralDamage);
-            applyScaledDamage(bindingB, structuralDamage);
+            pendingDamageById[bindingA->id] += structuralDamage * material_damage_multiplier(bindingA->material);
+            pendingDamageById[bindingB->id] += structuralDamage * material_damage_multiplier(bindingB->material);
         }
     }
 
@@ -549,7 +1030,7 @@ void PhysicsEngine::step(float dt)
         const bool isBlock = binding.kind == ObjectSnapshot::Kind::Block;
         const int scoreAwarded = isTarget
             ? binding.scoreValue
-            : (isBlock ? blockDestroyedScore(binding.material) : 0);
+            : (isBlock ? block_destroyed_score(binding.material) : 0);
         const Vec2 eventPositionPx = binding.bodyId.index1 != 0
             ? worldToPx({b2Body_GetPosition(binding.bodyId).x, b2Body_GetPosition(binding.bodyId).y})
             : binding.lastPositionPx;
@@ -561,8 +1042,8 @@ void PhysicsEngine::step(float dt)
 
         if (scoreAwarded > 0)
         {
-            scoreSystem_.add(scoreAwarded);
-            snapshot_.score = scoreSystem_.score();
+            score_system_.add(scoreAwarded);
+            snapshot_.score = score_system_.score();
             events_.push_back(ScoreChangedEvent{snapshot_.score});
 
             if (isTarget)
@@ -573,7 +1054,7 @@ void PhysicsEngine::step(float dt)
 
         if (binding.bodyId.index1 != 0)
         {
-            destroyBody(binding.bodyId);
+            destroy_body(binding.bodyId);
         }
 
         if (i + 1 < bodies_.size())
@@ -581,6 +1062,40 @@ void PhysicsEngine::step(float dt)
             bodies_[i] = std::move(bodies_.back());
         }
         bodies_.pop_back();
+    }
+
+    for (const auto& item : pendingProjectileCorrectionsByBody)
+    {
+        const PendingProjectileVelocityCorrection& correction = item.second;
+        if (B2_IS_NON_NULL(correction.projectileBodyId) && b2Body_IsValid(correction.projectileBodyId))
+        {
+            b2Vec2 correctedVelocity = correction.correctedVelocity;
+            const float correctedSpeed = std::sqrt(
+                correctedVelocity.x * correctedVelocity.x
+                + correctedVelocity.y * correctedVelocity.y);
+            if (!std::isfinite(correctedSpeed))
+            {
+                continue;
+            }
+            if (correctedSpeed > kBreakCarryMaxSpeedMps && correctedSpeed > 0.0001f)
+            {
+                const float scale = kBreakCarryMaxSpeedMps / correctedSpeed;
+                correctedVelocity.x *= scale;
+                correctedVelocity.y *= scale;
+            }
+            b2Body_SetLinearVelocity(correction.projectileBodyId, correctedVelocity);
+
+            if (correction.applyDampingGrace)
+            {
+                BodyBinding* projectile = find_binding(correction.projectileBodyId);
+                if (projectile != nullptr && projectile->kind == ObjectSnapshot::Kind::Projectile)
+                {
+                    projectile->postBreakDampingGraceSec = std::max(
+                        projectile->postBreakDampingGraceSec,
+                        kPostBreakDampingGraceSec);
+                }
+            }
+        }
     }
 
     // Apply rolling slowdown to all dynamic gameplay bodies touching surfaces.
@@ -600,18 +1115,36 @@ void PhysicsEngine::step(float dt)
         {
             continue;
         }
-        if (!b2Body_IsAwake(binding.bodyId) || !isBodyOnSurface(binding.bodyId))
+        if (!b2Body_IsAwake(binding.bodyId))
+        {
+            continue;
+        }
+
+        const b2Vec2 linearVel = b2Body_GetLinearVelocity(binding.bodyId);
+        if (std::abs(linearVel.y) > 1.2f)
+        {
+            continue;
+        }
+
+        if (!is_body_on_surface(binding.bodyId))
         {
             continue;
         }
 
         if (binding.kind == ObjectSnapshot::Kind::Projectile)
         {
-            applySurfaceDamping(binding.bodyId, 0.97f, 0.97f);
+            if (binding.postBreakDampingGraceSec > 0.0f)
+            {
+                apply_surface_damping(binding.bodyId, 0.992f, 0.992f);
+            }
+            else
+            {
+                apply_surface_damping(binding.bodyId, 0.97f, 0.97f);
+            }
         }
         else
         {
-            applySurfaceDamping(binding.bodyId, 0.94f, 0.94f);
+            apply_surface_damping(binding.bodyId, 0.94f, 0.94f);
         }
     }
 
@@ -627,7 +1160,7 @@ void PhysicsEngine::step(float dt)
         {
             continue;
         }
-        if (bodyIdEquals(binding.bodyId, activeProjectileBodyId_))
+        if (body_id_equals(binding.bodyId, active_projectile_body_id_))
         {
             continue;
         }
@@ -653,7 +1186,7 @@ void PhysicsEngine::step(float dt)
             binding.settledTimeSec = 0.0f;
         }
 
-        if (isOutOfBoundsPx(projectilePosPx)
+        if (is_out_of_bounds_px(projectilePosPx)
             || (binding.settledFrames >= kProjectileSettledFramesNeeded
                 && binding.settledTimeSec >= kProjectileSettledRemoveDelaySec))
         {
@@ -675,7 +1208,7 @@ void PhysicsEngine::step(float dt)
 
             if (B2_IS_NON_NULL(bodies_[i].bodyId) && b2Body_IsValid(bodies_[i].bodyId))
             {
-                destroyBody(bodies_[i].bodyId);
+                destroy_body(bodies_[i].bodyId);
             }
 
             if (i + 1 < bodies_.size())
@@ -687,33 +1220,33 @@ void PhysicsEngine::step(float dt)
     }
 
     if (!settledSecondaryProjectileIds.empty()
-        && B2_IS_NULL(activeProjectileBodyId_)
-        && !hasAliveProjectiles())
+        && B2_IS_NULL(active_projectile_body_id_)
+        && !has_alive_projectiles())
     {
-        tryPrepareNextProjectile();
+        try_prepare_next_projectile();
     }
 
-    if (B2_IS_NON_NULL(activeProjectileBodyId_))
+    if (B2_IS_NON_NULL(active_projectile_body_id_))
     {
-        if (!b2Body_IsValid(activeProjectileBodyId_))
+        if (!b2Body_IsValid(active_projectile_body_id_))
         {
-            activeProjectileBodyId_ = b2_nullBodyId;
-            activeProjectileSettledFrames_ = 0;
-            activeProjectileSettledTimeSec_ = 0.0f;
-            activeProjectileType_ = ProjectileType::Standard;
-            activeProjectileAbilityUsed_ = false;
-            tryPrepareNextProjectile();
+            active_projectile_body_id_ = b2_nullBodyId;
+            active_projectile_settled_frames_ = 0;
+            active_projectile_settled_time_sec_ = 0.0f;
+            active_projectile_type_ = ProjectileType::Standard;
+            active_projectile_ability_used_ = false;
+            try_prepare_next_projectile();
         }
         else
         {
-            const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+            const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
             const Vec2 projectilePosPx = worldToPx({worldPos.x, worldPos.y});
-            b2Vec2 linearVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
-            float angularVel = b2Body_GetAngularVelocity(activeProjectileBodyId_);
-            const bool isAwake = b2Body_IsAwake(activeProjectileBodyId_);
+            b2Vec2 linearVel = b2Body_GetLinearVelocity(active_projectile_body_id_);
+            float angularVel = b2Body_GetAngularVelocity(active_projectile_body_id_);
+            const bool isAwake = b2Body_IsAwake(active_projectile_body_id_);
 
-            linearVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
-            angularVel = b2Body_GetAngularVelocity(activeProjectileBodyId_);
+            linearVel = b2Body_GetLinearVelocity(active_projectile_body_id_);
+            angularVel = b2Body_GetAngularVelocity(active_projectile_body_id_);
             const float linearSpeed = std::sqrt(linearVel.x * linearVel.x + linearVel.y * linearVel.y);
             const bool settledNow = (!isAwake)
                 || (linearSpeed < kProjectileSleepLinearSpeedMps
@@ -721,45 +1254,45 @@ void PhysicsEngine::step(float dt)
 
             if (settledNow)
             {
-                activeProjectileSettledFrames_ += 1;
-                activeProjectileSettledTimeSec_ += clampedDt;
+                active_projectile_settled_frames_ += 1;
+                active_projectile_settled_time_sec_ += clampedDt;
             }
             else
             {
-                activeProjectileSettledFrames_ = 0;
-                activeProjectileSettledTimeSec_ = 0.0f;
+                active_projectile_settled_frames_ = 0;
+                active_projectile_settled_time_sec_ = 0.0f;
             }
 
-            if (isOutOfBoundsPx(projectilePosPx))
+            if (is_out_of_bounds_px(projectilePosPx))
             {
-                destroyBody(activeProjectileBodyId_);
-                activeProjectileBodyId_ = b2_nullBodyId;
-                activeProjectileSettledFrames_ = 0;
-                activeProjectileSettledTimeSec_ = 0.0f;
-                activeProjectileType_ = ProjectileType::Standard;
-                activeProjectileAbilityUsed_ = false;
-                tryPrepareNextProjectile();
+                destroy_body(active_projectile_body_id_);
+                active_projectile_body_id_ = b2_nullBodyId;
+                active_projectile_settled_frames_ = 0;
+                active_projectile_settled_time_sec_ = 0.0f;
+                active_projectile_type_ = ProjectileType::Standard;
+                active_projectile_ability_used_ = false;
+                try_prepare_next_projectile();
             }
-            else if (activeProjectileSettledFrames_ >= kProjectileSettledFramesNeeded
-                && activeProjectileSettledTimeSec_ >= kProjectileSettledRemoveDelaySec)
+            else if (active_projectile_settled_frames_ >= kProjectileSettledFramesNeeded
+                && active_projectile_settled_time_sec_ >= kProjectileSettledRemoveDelaySec)
             {
-                destroyBody(activeProjectileBodyId_);
-                activeProjectileBodyId_ = b2_nullBodyId;
-                activeProjectileSettledFrames_ = 0;
-                activeProjectileSettledTimeSec_ = 0.0f;
-                activeProjectileType_ = ProjectileType::Standard;
-                activeProjectileAbilityUsed_ = false;
-                tryPrepareNextProjectile();
+                destroy_body(active_projectile_body_id_);
+                active_projectile_body_id_ = b2_nullBodyId;
+                active_projectile_settled_frames_ = 0;
+                active_projectile_settled_time_sec_ = 0.0f;
+                active_projectile_type_ = ProjectileType::Standard;
+                active_projectile_ability_used_ = false;
+                try_prepare_next_projectile();
             }
         }
     }
 
-    updateLevelStatus();
+    update_level_status();
     if (statusBeforeStep != snapshot_.status
         && (snapshot_.status == LevelStatus::Win || snapshot_.status == LevelStatus::Lose))
     {
-        const int stars = calculateStarsForResult(
-            currentLevel_, scoreSystem_, snapshot_.status);
+        const int stars = calculate_stars_for_result(
+            current_level_, score_system_, snapshot_.status);
 
         snapshot_.stars = stars;
         events_.push_back(LevelCompletedEvent{
@@ -767,25 +1300,29 @@ void PhysicsEngine::step(float dt)
             snapshot_.score,
             stars});
     }
-    refreshSnapshot();
+    refresh_snapshot();
 
     const auto end = std::chrono::steady_clock::now();
     snapshot_.physicsStepMs = std::chrono::duration<float, std::milli>(end - start).count();
 }
 
-WorldSnapshot PhysicsEngine::getSnapshot() const
+// #=# Snapshot & Events #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+WorldSnapshot PhysicsEngine::get_snapshot() const
 {
     return snapshot_;
 }
 
-std::vector<Event> PhysicsEngine::drainEvents()
+std::vector<Event> PhysicsEngine::drain_events()
 {
     std::vector<Event> out;
     out.swap(events_);
     return out;
 }
 
-void PhysicsEngine::applyCommand(const Command& cmd)
+// #=# Command Dispatch #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+void PhysicsEngine::apply_command(const Command& cmd)
 {
     std::visit(
         [this](const auto& concrete)
@@ -794,17 +1331,17 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
             if constexpr (std::is_same_v<T, LoadLevelCmd>)
             {
-                const auto it = levelRegistry_.find(concrete.levelId);
-                if (it != levelRegistry_.end())
+                const auto it = level_registry_.find(concrete.levelId);
+                if (it != level_registry_.end())
                 {
-                    loadLevel(it->second);
+                    load_level(it->second);
                 }
             }
             else if constexpr (std::is_same_v<T, RestartCmd>)
             {
-                if (concrete.levelId == currentLevel_.meta.id)
+                if (concrete.levelId == current_level_.meta.id)
                 {
-                    loadLevel(currentLevel_);
+                    load_level(current_level_);
                 }
             }
             else if constexpr (std::is_same_v<T, PauseCmd>)
@@ -813,17 +1350,17 @@ void PhysicsEngine::applyCommand(const Command& cmd)
             }
             else if constexpr (std::is_same_v<T, LaunchCmd>)
             {
-                if (!levelLoaded_ || !snapshot_.slingshot.canShoot || snapshot_.shotsRemaining <= 0)
+                if (!level_loaded_ || !snapshot_.slingshot.canShoot || snapshot_.shotsRemaining <= 0)
                 {
                     return;
                 }
 
-                const Vec2 launchVelocityPx = computeLaunchVelocityPx(concrete.pullVectorPx);
+                const Vec2 launchVelocityPx = compute_launch_velocity_px(concrete.pullVectorPx);
                 const Vec2 launchOriginPx = {
                     snapshot_.slingshot.basePx.x,
                     snapshot_.slingshot.basePx.y - kSlingshotForkYOffsetPx,
                 };
-                const b2BodyId projectileBodyId = createProjectileBody(
+                const b2BodyId projectileBodyId = create_projectile_body(
                     snapshot_.slingshot.nextProjectile,
                     launchOriginPx,
                     launchVelocityPx);
@@ -833,29 +1370,29 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     return;
                 }
 
-                activeProjectileBodyId_ = projectileBodyId;
-                activeProjectileSettledFrames_ = 0;
-                activeProjectileSettledTimeSec_ = 0.0f;
-                activeProjectileType_ = snapshot_.slingshot.nextProjectile;
-                activeProjectileAbilityUsed_ = false;
-                nextProjectileIndex_++;
+                active_projectile_body_id_ = projectileBodyId;
+                active_projectile_settled_frames_ = 0;
+                active_projectile_settled_time_sec_ = 0.0f;
+                active_projectile_type_ = snapshot_.slingshot.nextProjectile;
+                active_projectile_ability_used_ = false;
+                next_projectile_index_++;
                 snapshot_.shotsRemaining = std::max(0, snapshot_.shotsRemaining - 1);
                 snapshot_.slingshot.canShoot = false;
                 snapshot_.slingshot.pullOffsetPx = {0.0f, 0.0f};
 
-                if (nextProjectileIndex_ < static_cast<int>(currentLevel_.projectiles.size()))
+                if (next_projectile_index_ < static_cast<int>(current_level_.projectiles.size()))
                 {
-                    snapshot_.slingshot.nextProjectile = currentLevel_.projectiles[nextProjectileIndex_].type;
+                    snapshot_.slingshot.nextProjectile = current_level_.projectiles[next_projectile_index_].type;
                 }
             }
             else if constexpr (std::is_same_v<T, ActivateAbilityCmd>)
             {
-                if (B2_IS_NULL(activeProjectileBodyId_) || !b2Body_IsValid(activeProjectileBodyId_))
+                if (B2_IS_NULL(active_projectile_body_id_) || !b2Body_IsValid(active_projectile_body_id_))
                 {
                     return;
                 }
 
-                BodyBinding* projectile = findBinding(activeProjectileBodyId_);
+                BodyBinding* projectile = find_binding(active_projectile_body_id_);
                 if (projectile == nullptr)
                 {
                     return;
@@ -866,33 +1403,33 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     return;
                 }
 
-                if (activeProjectileAbilityUsed_)
+                if (active_projectile_ability_used_)
                 {
                     return;
                 }
 
-                if (activeProjectileType_ == ProjectileType::Dasher)
+                if (active_projectile_type_ == ProjectileType::Dasher)
                 {
-                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
-                    const b2Vec2 velocity = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
+                    const b2Vec2 velocity = b2Body_GetLinearVelocity(active_projectile_body_id_);
                     const float speed = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
                     if (speed > 0.001f)
                     {
-                        constexpr float kDasherBoostMultiplier = 1.35f;
+                        constexpr float kDasherBoostMultiplier = 1.86f;
                         b2Body_SetLinearVelocity(
-                            activeProjectileBodyId_,
+                            active_projectile_body_id_,
                             b2Vec2{velocity.x * kDasherBoostMultiplier, velocity.y * kDasherBoostMultiplier});
-                        activeProjectileAbilityUsed_ = true;
+                        active_projectile_ability_used_ = true;
                         events_.push_back(AbilityActivatedEvent{
                             projectile->id,
-                            activeProjectileType_,
+                            active_projectile_type_,
                             worldToPx({worldPos.x, worldPos.y})});
                     }
                 }
-                else if (activeProjectileType_ == ProjectileType::Splitter)
+                else if (active_projectile_type_ == ProjectileType::Splitter)
                 {
-                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
-                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(active_projectile_body_id_);
                     const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
                     const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
                     const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
@@ -900,23 +1437,23 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     if (speedPx > 1.0f)
                     {
                         constexpr float kSplitAngleRad = 0.26f;  // ~15 deg
-                        const Vec2 leftVelPx = rotatePxVector(velPx, -kSplitAngleRad);
-                        const Vec2 rightVelPx = rotatePxVector(velPx, kSplitAngleRad);
+                        const Vec2 leftVelPx = rotate_px_vector(velPx, -kSplitAngleRad);
+                        const Vec2 rightVelPx = rotate_px_vector(velPx, kSplitAngleRad);
 
                         // Spawn split projectiles exactly at the parent position.
-                        createProjectileBody(ProjectileType::Splitter, posPx, leftVelPx);
-                        createProjectileBody(ProjectileType::Splitter, posPx, rightVelPx);
-                        activeProjectileAbilityUsed_ = true;
+                        create_projectile_body(ProjectileType::Splitter, posPx, leftVelPx);
+                        create_projectile_body(ProjectileType::Splitter, posPx, rightVelPx);
+                        active_projectile_ability_used_ = true;
                         events_.push_back(AbilityActivatedEvent{
                             projectile->id,
-                            activeProjectileType_,
+                            active_projectile_type_,
                             posPx});
                     }
                 }
-                else if (activeProjectileType_ == ProjectileType::Dropper)
+                else if (active_projectile_type_ == ProjectileType::Dropper)
                 {
-                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
-                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
+                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(active_projectile_body_id_);
                     const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
                     const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
                     const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
@@ -926,81 +1463,38 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         velPx.x * 0.15f,
                         droppedDownSpeedPx,
                     };
-                    createProjectileBody(ProjectileType::Standard, posPx, droppedVelPx);
+                    create_projectile_body(ProjectileType::Standard, posPx, droppedVelPx);
 
                     Vec2 boostedParentVelPx = velPx;
                     boostedParentVelPx.x *= 1.05f;
                     boostedParentVelPx.y -= std::max(speedPx * 0.4f, 260.0f);
                     const WorldVec2 boostedParentVelWorld = pxToWorld(boostedParentVelPx);
                     b2Body_SetLinearVelocity(
-                        activeProjectileBodyId_,
+                        active_projectile_body_id_,
                         b2Vec2{boostedParentVelWorld.x, boostedParentVelWorld.y});
 
-                    activeProjectileAbilityUsed_ = true;
+                    active_projectile_ability_used_ = true;
                     events_.push_back(AbilityActivatedEvent{
                         projectile->id,
-                        activeProjectileType_,
+                        active_projectile_type_,
                         posPx});
                 }
-                else if (activeProjectileType_ == ProjectileType::Boomerang)
+                else if (active_projectile_type_ == ProjectileType::Boomerang)
                 {
-                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
-                    const b2Vec2 worldVel = b2Body_GetLinearVelocity(activeProjectileBodyId_);
+                    const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
                     const Vec2 posPx = worldToPx({worldPos.x, worldPos.y});
-                    const Vec2 velPx = worldToPx({worldVel.x, worldVel.y});
-                    const float speedPx = std::sqrt(velPx.x * velPx.x + velPx.y * velPx.y);
-                    const Vec2 aimPx = {
-                        snapshot_.slingshot.basePx.x,
-                        snapshot_.slingshot.basePx.y - 70.0f,
-                    };
-                    Vec2 toAimPx = {
-                        aimPx.x - posPx.x,
-                        aimPx.y - posPx.y,
-                    };
-                    const float toAimLen = std::sqrt(toAimPx.x * toAimPx.x + toAimPx.y * toAimPx.y);
-                    if (toAimLen > 0.001f)
-                    {
-                        toAimPx.x /= toAimLen;
-                        toAimPx.y /= toAimLen;
-                    }
-                    else
-                    {
-                        toAimPx = {-1.0f, -0.1f};
-                    }
-
-                    // Push boomerang direction lower to avoid overly horizontal return.
-                    toAimPx.y += 0.35f;
-                    const float biasedLen = std::sqrt(toAimPx.x * toAimPx.x + toAimPx.y * toAimPx.y);
-                    if (biasedLen > 0.001f)
-                    {
-                        toAimPx.x /= biasedLen;
-                        toAimPx.y /= biasedLen;
-                    }
-
-                    const float boomerangSpeedPx = std::max(speedPx * 1.35f, 650.0f);
-                    const Vec2 redirectedVelPx = {
-                        toAimPx.x * boomerangSpeedPx,
-                        toAimPx.y * boomerangSpeedPx,
-                    };
-                    const WorldVec2 redirectedVelWorld = pxToWorld(redirectedVelPx);
-                    b2Body_SetLinearVelocity(
-                        activeProjectileBodyId_,
-                        b2Vec2{redirectedVelWorld.x, redirectedVelWorld.y});
-
-                    const float cross =
-                        velPx.x * redirectedVelPx.y - velPx.y * redirectedVelPx.x;
-                    const float spinSign = cross >= 0.0f ? 1.0f : -1.0f;
-                    b2Body_SetAngularVelocity(activeProjectileBodyId_, 18.0f * spinSign);
-
-                    activeProjectileAbilityUsed_ = true;
+                    projectile->boomerangReturnRequested = true;
+                    projectile->boomerangReturning = false;
+                    projectile->boomerangReturnTimeSec = 0.0f;
+                    active_projectile_ability_used_ = true;
                     events_.push_back(AbilityActivatedEvent{
                         projectile->id,
-                        activeProjectileType_,
+                        active_projectile_type_,
                         posPx});
                 }
-                else if (activeProjectileType_ == ProjectileType::Bubbler)
+                else if (active_projectile_type_ == ProjectileType::Bubbler)
                 {
-                    const b2Vec2 worldPos = b2Body_GetPosition(activeProjectileBodyId_);
+                    const b2Vec2 worldPos = b2Body_GetPosition(active_projectile_body_id_);
                     const Vec2 centerPx = worldToPx({worldPos.x, worldPos.y});
                     const float captureRadiusWorld = kBubblerCaptureRadiusPx / PIXELS_PER_METER;
                     bool capturedAny = false;
@@ -1011,7 +1505,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         {
                             continue;
                         }
-                        if (bodyIdEquals(candidate.bodyId, activeProjectileBodyId_))
+                        if (body_id_equals(candidate.bodyId, active_projectile_body_id_))
                         {
                             continue;
                         }
@@ -1048,23 +1542,26 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         capturedAny = true;
                     }
 
-                    activeProjectileAbilityUsed_ = true;
+                    active_projectile_ability_used_ = true;
                     events_.push_back(AbilityActivatedEvent{
                         projectile->id,
-                        activeProjectileType_,
+                        active_projectile_type_,
                         centerPx});
 
                     // Keep gameplay deterministic: ability is consumed even if no body was captured.
                     (void)capturedAny;
                 }
-                else if (activeProjectileType_ == ProjectileType::Inflater)
+                else if (active_projectile_type_ == ProjectileType::Inflater)
                 {
                     constexpr float kInflatedRadiusPx = 40.0f;
-                    constexpr float kInflatedDensity = 0.75f;
-                    constexpr float kInflateSpeedDamp = 0.85f;
+                    constexpr float kInflatedDensity = 1.5f;
+                    constexpr float kInflateSpeedDamp = 0.90f;
+                    constexpr float kInflatePullRadiusPx = 170.0f;
+                    constexpr float kInflatePullImpulse = 0.72f;
+                    constexpr float kInflateMinPullFactor = 0.20f;
 
                     const EntityId projectileId = projectile->id;
-                    const b2BodyId oldBodyId = activeProjectileBodyId_;
+                    const b2BodyId oldBodyId = active_projectile_body_id_;
                     const b2Vec2 worldPos = b2Body_GetPosition(oldBodyId);
                     const b2Vec2 worldVel = b2Body_GetLinearVelocity(oldBodyId);
                     const float angularVel = b2Body_GetAngularVelocity(oldBodyId);
@@ -1077,7 +1574,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     bodyDef.angularDamping = 0.0f;
                     bodyDef.position = worldPos;
 
-                    const b2BodyId inflatedBodyId = b2CreateBody(worldId_, &bodyDef);
+                    const b2BodyId inflatedBodyId = b2CreateBody(world_id_, &bodyDef);
                     if (B2_IS_NULL(inflatedBodyId))
                     {
                         return;
@@ -1085,8 +1582,8 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                     b2ShapeDef shapeDef = b2DefaultShapeDef();
                     shapeDef.density = kInflatedDensity;
-                    shapeDef.friction = 0.35f;
-                    shapeDef.restitution = 0.05f;
+                    shapeDef.friction = 0.55f;
+                    shapeDef.restitution = 0.0f;
                     shapeDef.enableHitEvents = true;
 
                     b2Circle circle = {};
@@ -1101,16 +1598,61 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             worldVel.y * kInflateSpeedDamp});
                     b2Body_SetAngularVelocity(inflatedBodyId, angularVel * 0.7f);
 
+                    const float pullRadiusWorld = kInflatePullRadiusPx / PIXELS_PER_METER;
+                    for (BodyBinding& candidate : bodies_)
+                    {
+                        if (B2_IS_NULL(candidate.bodyId) || !b2Body_IsValid(candidate.bodyId))
+                        {
+                            continue;
+                        }
+                        if (body_id_equals(candidate.bodyId, oldBodyId)
+                            || body_id_equals(candidate.bodyId, inflatedBodyId))
+                        {
+                            continue;
+                        }
+                        if (candidate.kind != ObjectSnapshot::Kind::Block
+                            && candidate.kind != ObjectSnapshot::Kind::Target)
+                        {
+                            continue;
+                        }
+                        if (candidate.isStatic || b2Body_GetType(candidate.bodyId) != b2_dynamicBody)
+                        {
+                            continue;
+                        }
+
+                        const b2Vec2 candidatePos = b2Body_GetPosition(candidate.bodyId);
+                        const float dx = worldPos.x - candidatePos.x;
+                        const float dy = worldPos.y - candidatePos.y;
+                        const float distance = std::sqrt(dx * dx + dy * dy);
+                        if (distance > pullRadiusWorld || distance < 0.0001f)
+                        {
+                            continue;
+                        }
+
+                        const float falloff = clamp_value(
+                            1.0f - (distance / pullRadiusWorld),
+                            kInflateMinPullFactor,
+                            1.0f);
+                        const float mass = std::max(0.01f, b2Body_GetMass(candidate.bodyId));
+                        const float invDistance = 1.0f / distance;
+                        b2Body_ApplyLinearImpulseToCenter(
+                            candidate.bodyId,
+                            b2Vec2{
+                                dx * invDistance * kInflatePullImpulse * falloff * mass,
+                                dy * invDistance * kInflatePullImpulse * falloff * mass},
+                            true);
+                    }
+
                     if (B2_IS_NON_NULL(oldBodyId) && b2Body_IsValid(oldBodyId))
                     {
-                        destroyBody(oldBodyId);
+                        destroy_body(oldBodyId);
                     }
                     const auto oldIt = std::find_if(
                         bodies_.begin(),
                         bodies_.end(),
                         [oldBodyId](const BodyBinding& b)
                         {
-                            return B2_IS_NON_NULL(b.bodyId) && bodyIdEquals(b.bodyId, oldBodyId);
+                            return B2_IS_NON_NULL(b.bodyId) && body_id_equals(b.bodyId, oldBodyId);
                         });
                     if (oldIt != bodies_.end())
                     {
@@ -1131,23 +1673,23 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                     inflatedBinding.lastAngleDeg = 0.0f;
                     bodies_.push_back(inflatedBinding);
 
-                    activeProjectileBodyId_ = inflatedBodyId;
-                    activeProjectileType_ = ProjectileType::Inflater;
-                    activeProjectileAbilityUsed_ = true;
+                    active_projectile_body_id_ = inflatedBodyId;
+                    active_projectile_type_ = ProjectileType::Inflater;
+                    active_projectile_ability_used_ = true;
                     events_.push_back(AbilityActivatedEvent{
                         projectileId,
-                        activeProjectileType_,
+                        active_projectile_type_,
                         posPx});
                 }
-                else if (activeProjectileType_ == ProjectileType::Bomber)
+                else if (active_projectile_type_ == ProjectileType::Bomber)
                 {
-                    constexpr float kExplosionRadiusPx = 90.0f;
+                    constexpr float kExplosionRadiusPx = 124.2f;
                     constexpr float kExplosionMaxDamage = 60.0f;
-                    constexpr float kExplosionImpulse = 5.0f;
+                    constexpr float kExplosionImpulse = 6.5f;
                     constexpr float kExplosionCloseRangeLimiter = 0.85f;
 
                     const EntityId bomberId = projectile->id;
-                    const b2BodyId bomberBodyId = activeProjectileBodyId_;
+                    const b2BodyId bomberBodyId = active_projectile_body_id_;
                     const b2Vec2 explosionCenterWorld = b2Body_GetPosition(bomberBodyId);
                     const Vec2 explosionCenterPx =
                         worldToPx({explosionCenterWorld.x, explosionCenterWorld.y});
@@ -1160,7 +1702,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         {
                             continue;
                         }
-                        if (bodyIdEquals(candidate.bodyId, bomberBodyId))
+                        if (body_id_equals(candidate.bodyId, bomberBodyId))
                         {
                             continue;
                         }
@@ -1180,7 +1722,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         }
 
                         const float rawFalloff = 1.0f - (distance / explosionRadiusWorld);
-                        const float falloff = clampValue(rawFalloff, 0.0f, kExplosionCloseRangeLimiter);
+                        const float falloff = clamp_value(rawFalloff, 0.0f, kExplosionCloseRangeLimiter);
                         const float safeDistance = std::max(distance, 0.0001f);
                         const b2Vec2 dir = b2Vec2{dx / safeDistance, dy / safeDistance};
                         b2Body_ApplyLinearImpulseToCenter(
@@ -1195,7 +1737,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                             && candidate.isDestructible)
                         {
                             const float damage =
-                                kExplosionMaxDamage * falloff * materialDamageMultiplier(candidate.material);
+                                kExplosionMaxDamage * falloff * material_damage_multiplier(candidate.material);
                             candidate.hp -= damage;
                             if (candidate.hp <= 0.0f)
                             {
@@ -1206,7 +1748,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                     if (B2_IS_NON_NULL(bomberBodyId) && b2Body_IsValid(bomberBodyId))
                     {
-                        destroyBody(bomberBodyId);
+                        destroy_body(bomberBodyId);
                     }
                     for (std::size_t i = 0; i < bodies_.size(); ++i)
                     {
@@ -1239,7 +1781,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         const bool isBlock = victim.kind == ObjectSnapshot::Kind::Block;
                         const int scoreAwarded = isTarget
                             ? victim.scoreValue
-                            : (isBlock ? blockDestroyedScore(victim.material) : 0);
+                            : (isBlock ? block_destroyed_score(victim.material) : 0);
                         const Vec2 eventPositionPx = victim.bodyId.index1 != 0
                             ? worldToPx({b2Body_GetPosition(victim.bodyId).x, b2Body_GetPosition(victim.bodyId).y})
                             : victim.lastPositionPx;
@@ -1251,8 +1793,8 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                         if (scoreAwarded > 0)
                         {
-                            scoreSystem_.add(scoreAwarded);
-                            snapshot_.score = scoreSystem_.score();
+                            score_system_.add(scoreAwarded);
+                            snapshot_.score = score_system_.score();
                             events_.push_back(ScoreChangedEvent{snapshot_.score});
 
                             if (isTarget)
@@ -1263,7 +1805,7 @@ void PhysicsEngine::applyCommand(const Command& cmd)
 
                         if (victim.bodyId.index1 != 0)
                         {
-                            destroyBody(victim.bodyId);
+                            destroy_body(victim.bodyId);
                         }
 
                         if (i + 1 < bodies_.size())
@@ -1273,12 +1815,12 @@ void PhysicsEngine::applyCommand(const Command& cmd)
                         bodies_.pop_back();
                     }
 
-                    activeProjectileBodyId_ = b2_nullBodyId;
-                    activeProjectileSettledFrames_ = 0;
-                    activeProjectileSettledTimeSec_ = 0.0f;
-                    activeProjectileType_ = ProjectileType::Standard;
-                    activeProjectileAbilityUsed_ = false;
-                    tryPrepareNextProjectile();
+                    active_projectile_body_id_ = b2_nullBodyId;
+                    active_projectile_settled_frames_ = 0;
+                    active_projectile_settled_time_sec_ = 0.0f;
+                    active_projectile_type_ = ProjectileType::Standard;
+                    active_projectile_ability_used_ = false;
+                    try_prepare_next_projectile();
 
                     events_.push_back(AbilityActivatedEvent{
                         bomberId,
@@ -1290,9 +1832,11 @@ void PhysicsEngine::applyCommand(const Command& cmd)
         cmd);
 }
 
-void PhysicsEngine::createGround(float topYpx)
+// #=# World Geometry #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsEngine::create_ground(float topYpx)
 {
-    if (B2_IS_NULL(worldId_))
+    if (B2_IS_NULL(world_id_))
     {
         return;
     }
@@ -1301,7 +1845,7 @@ void PhysicsEngine::createGround(float topYpx)
     bodyDef.type = b2_staticBody;
     bodyDef.position = b2Vec2{0.0f, 0.0f};
 
-    const b2BodyId groundBodyId = b2CreateBody(worldId_, &bodyDef);
+    const b2BodyId groundBodyId = b2CreateBody(world_id_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.friction = 0.9f;
@@ -1347,9 +1891,11 @@ void PhysicsEngine::createGround(float topYpx)
     b2CreatePolygonShape(groundBodyId, &shapeDef, &ceiling);
 }
 
-void PhysicsEngine::createBlockBody(const BlockData& block)
+// #=# Body Factories #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsEngine::create_block_body(const BlockData& block)
 {
-    if (B2_IS_NULL(worldId_))
+    if (B2_IS_NULL(world_id_))
     {
         return;
     }
@@ -1360,25 +1906,21 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     b2BodyDef bodyDef = b2DefaultBodyDef();
     bodyDef.type = block.isStatic ? b2_staticBody : b2_dynamicBody;
     Vec2 adjustedPositionPx = block.positionPx;
-    adjustedPositionPx.y += levelYOffsetPx_;
+    adjustedPositionPx.y += level_y_offset_px_;
 
-    const float originalBottomPx = isCircle
-        ? block.positionPx.y + block.radiusPx
-        : block.positionPx.y + (block.sizePx.y * 0.5f);
+    const float bottomOffsetPx = compute_bottom_offset_px(block);
+    const float originalBottomPx = block.positionPx.y + bottomOffsetPx;
 
     // Force support blocks ("legs") to start exactly on the floor level.
-    if (std::abs(originalBottomPx - supportBottomPx_) < 0.5f)
+    if (std::abs(originalBottomPx - support_bottom_px_) < 0.5f)
     {
-        const float halfHeightPx = isCircle
-            ? block.radiusPx
-            : (block.sizePx.y * 0.5f);
-        adjustedPositionPx.y = groundTopYpx_ - halfHeightPx;
+        adjustedPositionPx.y = ground_top_ypx_ - bottomOffsetPx;
     }
     const WorldVec2 blockPosWorld = pxToWorld(adjustedPositionPx);
     bodyDef.position = b2Vec2{blockPosWorld.x, blockPosWorld.y};
     bodyDef.rotation = b2MakeRot(block.angleDeg / kDegreesPerRadian);
 
-    const b2BodyId bodyId = b2CreateBody(worldId_, &bodyDef);
+    const b2BodyId bodyId = b2CreateBody(world_id_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
@@ -1395,24 +1937,47 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     }
     else if (isTriangle)
     {
-        const float halfWidthM = (block.sizePx.x * 0.5f) / PIXELS_PER_METER;
-        const float halfHeightM = (block.sizePx.y * 0.5f) / PIXELS_PER_METER;
-        const b2Vec2 vertices[3] = {
-            b2Vec2{-halfWidthM, halfHeightM},
-            b2Vec2{halfWidthM, halfHeightM},
-            b2Vec2{0.0f, -halfHeightM},
-        };
+        bool createdFromVertices = false;
+        if (block.triangleLocalVerticesPx.size() == 3)
+        {
+            b2Vec2 vertices[3] = {};
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                vertices[i] = b2Vec2{
+                    block.triangleLocalVerticesPx[i].x / PIXELS_PER_METER,
+                    block.triangleLocalVerticesPx[i].y / PIXELS_PER_METER};
+            }
 
-        const b2Hull hull = b2ComputeHull(vertices, 3);
-        if (hull.count == 3 && b2ValidateHull(&hull))
-        {
-            const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
-            b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+            const b2Hull hull = b2ComputeHull(vertices, 3);
+            if (hull.count == 3 && b2ValidateHull(&hull))
+            {
+                const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
+                b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+                createdFromVertices = true;
+            }
         }
-        else
+
+        if (!createdFromVertices)
         {
-            const b2Polygon fallbackBox = b2MakeBox(halfWidthM, halfHeightM);
-            b2CreatePolygonShape(bodyId, &shapeDef, &fallbackBox);
+            const float halfWidthM = (block.sizePx.x * 0.5f) / PIXELS_PER_METER;
+            const float halfHeightM = (block.sizePx.y * 0.5f) / PIXELS_PER_METER;
+            const b2Vec2 vertices[3] = {
+                b2Vec2{-halfWidthM, halfHeightM},
+                b2Vec2{halfWidthM, halfHeightM},
+                b2Vec2{0.0f, -halfHeightM},
+            };
+
+            const b2Hull hull = b2ComputeHull(vertices, 3);
+            if (hull.count == 3 && b2ValidateHull(&hull))
+            {
+                const b2Polygon triangle = b2MakePolygon(&hull, 0.0f);
+                b2CreatePolygonShape(bodyId, &shapeDef, &triangle);
+            }
+            else
+            {
+                const b2Polygon fallbackBox = b2MakeBox(halfWidthM, halfHeightM);
+                b2CreatePolygonShape(bodyId, &shapeDef, &fallbackBox);
+            }
         }
     }
     else
@@ -1424,13 +1989,14 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     }
 
     BodyBinding binding;
-    binding.id = nextId_++;
+    binding.id = next_id_++;
     binding.kind = ObjectSnapshot::Kind::Block;
     binding.bodyId = bodyId;
     binding.sizePx = block.sizePx;
     binding.radiusPx = block.radiusPx;
     binding.material = block.material;
     binding.shape = block.shape;
+    binding.triangleLocalVerticesPx = block.triangleLocalVerticesPx;
     binding.hp = std::max(1.0f, block.hp);
     binding.maxHp = binding.hp;
     binding.isStatic = block.isStatic;
@@ -1440,9 +2006,9 @@ void PhysicsEngine::createBlockBody(const BlockData& block)
     bodies_.push_back(binding);
 }
 
-void PhysicsEngine::createTargetBody(const TargetData& target)
+void PhysicsEngine::create_target_body(const TargetData& target)
 {
-    if (B2_IS_NULL(worldId_))
+    if (B2_IS_NULL(world_id_))
     {
         return;
     }
@@ -1450,11 +2016,11 @@ void PhysicsEngine::createTargetBody(const TargetData& target)
     b2BodyDef bodyDef = b2DefaultBodyDef();
     bodyDef.type = b2_dynamicBody;
     Vec2 adjustedPositionPx = target.positionPx;
-    adjustedPositionPx.y += levelYOffsetPx_;
+    adjustedPositionPx.y += level_y_offset_px_;
     const WorldVec2 targetPosWorld = pxToWorld(adjustedPositionPx);
     bodyDef.position = b2Vec2{targetPosWorld.x, targetPosWorld.y};
 
-    const b2BodyId bodyId = b2CreateBody(worldId_, &bodyDef);
+    const b2BodyId bodyId = b2CreateBody(world_id_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
@@ -1468,7 +2034,7 @@ void PhysicsEngine::createTargetBody(const TargetData& target)
     b2CreateCircleShape(bodyId, &shapeDef, &circle);
 
     BodyBinding binding;
-    binding.id = nextId_++;
+    binding.id = next_id_++;
     binding.kind = ObjectSnapshot::Kind::Target;
     binding.bodyId = bodyId;
     binding.sizePx = {target.radiusPx * 2.0f, target.radiusPx * 2.0f};
@@ -1482,9 +2048,9 @@ void PhysicsEngine::createTargetBody(const TargetData& target)
     bodies_.push_back(binding);
 }
 
-b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& spawnPx, const Vec2& launchVelocityPx)
+b2BodyId PhysicsEngine::create_projectile_body(ProjectileType type, const Vec2& spawnPx, const Vec2& launchVelocityPx)
 {
-    if (B2_IS_NULL(worldId_))
+    if (B2_IS_NULL(world_id_))
     {
         return b2_nullBodyId;
     }
@@ -1525,12 +2091,12 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
     const WorldVec2 spawnWorld = pxToWorld(spawnPx);
     bodyDef.position = b2Vec2{spawnWorld.x, spawnWorld.y};
 
-    const b2BodyId bodyId = b2CreateBody(worldId_, &bodyDef);
+    const b2BodyId bodyId = b2CreateBody(world_id_, &bodyDef);
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = density;
     shapeDef.friction = 0.35f;
-    shapeDef.restitution = 0.05f;
+    shapeDef.restitution = 0.08f;
     shapeDef.enableHitEvents = true;
 
     b2Circle circle = {};
@@ -1542,7 +2108,7 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
     b2Body_SetLinearVelocity(bodyId, b2Vec2{velocityWorld.x, velocityWorld.y});
 
     BodyBinding binding;
-    binding.id = nextId_++;
+    binding.id = next_id_++;
     binding.kind = ObjectSnapshot::Kind::Projectile;
     binding.bodyId = bodyId;
     binding.sizePx = {radiusPx * 2.0f, radiusPx * 2.0f};
@@ -1553,19 +2119,43 @@ b2BodyId PhysicsEngine::createProjectileBody(ProjectileType type, const Vec2& sp
     binding.maxHp = 1.0f;
     binding.lastPositionPx = spawnPx;
     binding.lastAngleDeg = 0.0f;
+    if (type == ProjectileType::Boomerang)
+    {
+        binding.boomerangStartPx = spawnPx;
+        const float speedPx = std::sqrt(
+            launchVelocityPx.x * launchVelocityPx.x + launchVelocityPx.y * launchVelocityPx.y);
+        if (speedPx > 0.001f)
+        {
+            binding.boomerangLaunchDir = {
+                launchVelocityPx.x / speedPx,
+                launchVelocityPx.y / speedPx,
+            };
+        }
+        else
+        {
+            binding.boomerangLaunchDir = {1.0f, 0.0f};
+        }
+        binding.boomerangTimeSinceLaunchSec = 0.0f;
+        binding.boomerangReturnTimeSec = 0.0f;
+        binding.boomerangCurveSign = 1.0f;
+        binding.boomerangReturnRequested = false;
+        binding.boomerangReturning = false;
+    }
     bodies_.push_back(binding);
 
     return bodyId;
 }
 
-void PhysicsEngine::destroyBody(b2BodyId bodyId)
+// #=# Lifecycle & Status #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsEngine::destroy_body(b2BodyId bodyId)
 {
-    if (B2_IS_NULL(worldId_) || B2_IS_NULL(bodyId))
+    if (B2_IS_NULL(world_id_) || B2_IS_NULL(bodyId))
     {
         return;
     }
 
-    BodyBinding* binding = findBinding(bodyId);
+    BodyBinding* binding = find_binding(bodyId);
     if (binding != nullptr)
     {
         const b2Vec2 worldPos = b2Body_GetPosition(bodyId);
@@ -1578,7 +2168,7 @@ void PhysicsEngine::destroyBody(b2BodyId bodyId)
     b2DestroyBody(bodyId);
 }
 
-void PhysicsEngine::updateLevelStatus()
+void PhysicsEngine::update_level_status()
 {
     bool hasAliveTargets = false;
 
@@ -1597,7 +2187,7 @@ void PhysicsEngine::updateLevelStatus()
         return;
     }
 
-    if (snapshot_.shotsRemaining == 0 && !hasAliveProjectiles())
+    if (snapshot_.shotsRemaining == 0 && !has_alive_projectiles())
     {
         // Invariant: level can be won only when all targets are destroyed.
         snapshot_.status = LevelStatus::Lose;
@@ -1608,7 +2198,7 @@ void PhysicsEngine::updateLevelStatus()
     }
 }
 
-void PhysicsEngine::refreshSnapshot()
+void PhysicsEngine::refresh_snapshot()
 {
     snapshot_.objects.clear();
     snapshot_.objects.reserve(bodies_.size());
@@ -1623,8 +2213,9 @@ void PhysicsEngine::refreshSnapshot()
         object.material = binding.material;
         object.projectileType = binding.projectileType;
         object.shape = binding.shape;
+        object.triangleLocalVerticesPx = binding.triangleLocalVerticesPx;
         object.isStatic = binding.isStatic;
-        object.hpNormalized = clampValue(binding.hp / std::max(1.0f, binding.maxHp), 0.0f, 1.0f);
+        object.hpNormalized = clamp_value(binding.hp / std::max(1.0f, binding.maxHp), 0.0f, 1.0f);
 
         if (B2_IS_NON_NULL(binding.bodyId) && b2Body_IsValid(binding.bodyId))
         {
@@ -1648,37 +2239,37 @@ void PhysicsEngine::refreshSnapshot()
     }
 
     snapshot_.projectileQueue.clear();
-    if (!currentLevel_.projectiles.empty())
+    if (!current_level_.projectiles.empty())
     {
-        const int totalProjectiles = static_cast<int>(currentLevel_.projectiles.size());
-        const int nextIndex = std::clamp(nextProjectileIndex_, 0, totalProjectiles);
+        const int totalProjectiles = static_cast<int>(current_level_.projectiles.size());
+        const int nextIndex = std::clamp(next_projectile_index_, 0, totalProjectiles);
 
         // While projectile is flying, keep it at queue front for HUD continuity.
         if (!snapshot_.slingshot.canShoot && nextIndex > 0)
         {
-            snapshot_.projectileQueue.push_back(currentLevel_.projectiles[nextIndex - 1].type);
+            snapshot_.projectileQueue.push_back(current_level_.projectiles[nextIndex - 1].type);
         }
 
         for (int i = nextIndex; i < totalProjectiles; ++i)
         {
-            snapshot_.projectileQueue.push_back(currentLevel_.projectiles[i].type);
+            snapshot_.projectileQueue.push_back(current_level_.projectiles[i].type);
         }
     }
 }
 
-void PhysicsEngine::tryPrepareNextProjectile()
+void PhysicsEngine::try_prepare_next_projectile()
 {
     snapshot_.slingshot.canShoot =
-        nextProjectileIndex_ < static_cast<int>(currentLevel_.projectiles.size())
-        && !hasAliveProjectiles();
+        next_projectile_index_ < static_cast<int>(current_level_.projectiles.size())
+        && !has_alive_projectiles();
     if (snapshot_.slingshot.canShoot)
     {
-        snapshot_.slingshot.nextProjectile = currentLevel_.projectiles[nextProjectileIndex_].type;
+        snapshot_.slingshot.nextProjectile = current_level_.projectiles[next_projectile_index_].type;
         events_.push_back(ProjectileReadyEvent{snapshot_.slingshot.nextProjectile, snapshot_.shotsRemaining});
     }
 }
 
-bool PhysicsEngine::hasAliveProjectiles() const
+bool PhysicsEngine::has_alive_projectiles() const
 {
     for (const BodyBinding& binding : bodies_)
     {
@@ -1695,7 +2286,7 @@ bool PhysicsEngine::hasAliveProjectiles() const
     return false;
 }
 
-Vec2 PhysicsEngine::computeLaunchVelocityPx(const Vec2& pullVectorPx) const
+Vec2 PhysicsEngine::compute_launch_velocity_px(const Vec2& pullVectorPx) const
 {
     const float power = 4.5f;
     return {
@@ -1704,11 +2295,11 @@ Vec2 PhysicsEngine::computeLaunchVelocityPx(const Vec2& pullVectorPx) const
     };
 }
 
-PhysicsEngine::BodyBinding* PhysicsEngine::findBinding(b2BodyId bodyId)
+PhysicsEngine::BodyBinding* PhysicsEngine::find_binding(b2BodyId bodyId)
 {
     for (BodyBinding& binding : bodies_)
     {
-        if (B2_IS_NON_NULL(binding.bodyId) && bodyIdEquals(binding.bodyId, bodyId))
+        if (B2_IS_NON_NULL(binding.bodyId) && body_id_equals(binding.bodyId, bodyId))
         {
             return &binding;
         }

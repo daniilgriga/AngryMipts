@@ -1,3 +1,14 @@
+// ============================================================
+// main.cpp — Application bootstrap and scene wiring.
+// Part of: angry::app
+//
+// Initializes runtime and launches the game loop:
+//   * Creates window/font and core services
+//   * Instantiates scenes and registers transitions
+//   * Runs native loop or Emscripten frame callback
+//   * Handles platform-specific frame limiting behavior
+// ============================================================
+
 #include "data/account_service.hpp"
 #include "platform/platform.hpp"
 #include "ui/game_scene.hpp"
@@ -29,7 +40,7 @@ enum class FrameLimitMode
     Unlimited,
 };
 
-FrameLimitMode nextFrameLimitMode( FrameLimitMode mode )
+FrameLimitMode next_frame_limit_mode( FrameLimitMode mode )
 {
     switch ( mode )
     {
@@ -43,7 +54,7 @@ FrameLimitMode nextFrameLimitMode( FrameLimitMode mode )
     }
 }
 
-unsigned int frameLimitValue( FrameLimitMode mode )
+unsigned int frame_limit_value( FrameLimitMode mode )
 {
     switch ( mode )
     {
@@ -57,7 +68,7 @@ unsigned int frameLimitValue( FrameLimitMode mode )
     }
 }
 
-const char* frameLimitLabel( FrameLimitMode mode )
+const char* frame_limit_label( FrameLimitMode mode )
 {
     switch ( mode )
     {
@@ -73,28 +84,28 @@ const char* frameLimitLabel( FrameLimitMode mode )
 
 #endif  // !__EMSCRIPTEN__
 
-std::string resolveProjectPath( const std::filesystem::path& relativePath )
+std::string resolve_project_path( const std::filesystem::path& relative_path )
 {
-    if ( std::filesystem::exists( relativePath ) )
+    if ( std::filesystem::exists( relative_path ) )
     {
-        return relativePath.string();
+        return relative_path.string();
     }
 
 #ifdef ANGRY_MIPTS_SOURCE_DIR
-    const std::filesystem::path fromSourceDir =
-        std::filesystem::path( ANGRY_MIPTS_SOURCE_DIR ) / relativePath;
-    if ( std::filesystem::exists( fromSourceDir ) )
+    const std::filesystem::path from_source_dir =
+        std::filesystem::path( ANGRY_MIPTS_SOURCE_DIR ) / relative_path;
+    if ( std::filesystem::exists( from_source_dir ) )
     {
-        return fromSourceDir.string();
+        return from_source_dir.string();
     }
 #endif
 
-    return relativePath.string();
+    return relative_path.string();
 }
 
 }  // namespace
 
-// ─── Web (Emscripten) main loop ─────────────────────────────────────────────
+// #=# Web (Emscripten) Main Loop #=#=#=#=#=#=#=#=#=#=#=#=#=#=
 #ifdef __EMSCRIPTEN__
 
 struct WebApp
@@ -112,15 +123,15 @@ static void web_frame()
     auto& app = *g_app;
 
     // Poll events
-    for ( auto& ev : app.window.pollEvents() )
+    for ( auto& event : app.window.pollEvents() )
     {
         // Check for close
-        if ( std::holds_alternative<platform::ClosedEvent>( ev ) )
+        if ( std::holds_alternative<platform::ClosedEvent>( event ) )
         {
             app.window.close();
             return;
         }
-        app.scenes.handle_input( ev );
+        app.scenes.handle_input( event );
     }
 
     app.scenes.update();
@@ -135,23 +146,23 @@ int main()
     g_app = new WebApp();
     auto& app = *g_app;
 
-    const std::string fontPath = "/assets/fonts/liberation_sans.ttf";
-    const std::string levelsPath = "/levels";
-    const std::string scoresPath;   // disabled on web (no persistent local file storage yet)
+    const std::string font_path = "/assets/fonts/liberation_sans.ttf";
+    const std::string levels_path = "/levels";
+    const std::string scores_path;   // disabled on web (no persistent local file storage yet)
 
     app.window.create( 1280, 720, "AngryMipts" );
     app.window.setFramerateLimit( 60 );
 
-    if ( !app.font.openFromFile( fontPath ) )
+    if ( !app.font.openFromFile( font_path ) )
     {
         std::cerr << "Failed to load font" << std::endl;
         return 1;
     }
 
-    app.accounts.loadSession();
+    app.accounts.load_session();
 
     auto level_select = std::make_unique<angry::LevelSelectScene>( app.font, &app.accounts );
-    level_select->load_data( levelsPath, scoresPath );
+    level_select->load_data( levels_path, scores_path );
 
     app.scenes.add_scene( angry::SceneId::Login,
                           std::make_unique<angry::LoginScene>( app.font, app.accounts ) );
@@ -162,63 +173,64 @@ int main()
                           std::make_unique<angry::GameScene>( app.font, &app.accounts ) );
     app.scenes.add_scene( angry::SceneId::Result,
                           std::make_unique<angry::ResultScene>( app.font ) );
-    app.scenes.switch_to( angry::SceneId::Login );
+    app.scenes.switch_to(
+        app.accounts.is_logged_in() ? angry::SceneId::Menu : angry::SceneId::Login );
 
     emscripten_set_main_loop( web_frame, 0, 1 );
 
     return 0;
 }
 
-#else  // ─── Native (SFML) main loop ─────────────────────────────────────────
+#else  // #=# Native (SFML) Main Loop #=#=#=#=#=#=#=#=#=#=#=#=#
 
 int main()
 {
-    const std::string fontPath = resolveProjectPath( "assets/fonts/liberation_sans.ttf" );
-    const std::string windowTitle = "AngryMipts";
+    const std::string font_path = resolve_project_path( "assets/fonts/liberation_sans.ttf" );
+    const std::string window_title = "AngryMipts";
 
     sf::Font font;
-    if ( !font.openFromFile ( fontPath ) )
+    if ( !font.openFromFile ( font_path ) )
     {
-        std::cerr << "Failed to load font from: " << fontPath << std::endl;
+        std::cerr << "Failed to load font from: " << font_path << std::endl;
         return 1;
     }
 
     sf::RenderWindow window;
-    bool isFullscreen = false;
-    sf::Vector2u windowedSize {1280u, 720u};
-    FrameLimitMode frameLimitMode = FrameLimitMode::Fps60;
+    bool is_fullscreen = false;
+    sf::Vector2u windowed_size {1280u, 720u};
+    FrameLimitMode frame_limit_mode = FrameLimitMode::Fps60;
 
-    auto applyFrameLimit = [&] ()
+    auto apply_frame_limit = [&] ()
     {
         window.setVerticalSyncEnabled ( false );
-        window.setFramerateLimit ( frameLimitValue ( frameLimitMode ) );
+        window.setFramerateLimit ( frame_limit_value ( frame_limit_mode ) );
     };
 
-    auto recreateWindow = [&] ( bool fullscreen )
+    auto recreate_window = [&] ( bool fullscreen )
     {
         if ( fullscreen )
         {
-            window.create ( sf::VideoMode::getDesktopMode(), windowTitle, sf::State::Fullscreen );
+            window.create ( sf::VideoMode::getDesktopMode(), window_title, sf::State::Fullscreen );
         }
         else
         {
-            window.create ( sf::VideoMode ( windowedSize ), windowTitle,
+            window.create ( sf::VideoMode ( windowed_size ), window_title,
                             sf::Style::Default, sf::State::Windowed );
         }
 
-        applyFrameLimit();
-        isFullscreen = fullscreen;
+        apply_frame_limit();
+        is_fullscreen = fullscreen;
     };
 
-    recreateWindow ( true );
+    recreate_window ( true );
 
-    const std::string sessionPath = resolveProjectPath ( "session.json" );
-    angry::AccountService accounts ( sessionPath );
-    accounts.loadSession();
+    const std::string session_path = resolve_project_path ( "session.json" );
+    angry::AccountService accounts ( session_path );
+    accounts.load_session();
 
     auto level_select = std::make_unique<angry::LevelSelectScene> ( font, &accounts );
-    level_select->load_data ( resolveProjectPath ( "levels" ),
-                              resolveProjectPath ( "scores.json" ) );
+    level_select->load_data ( resolve_project_path ( "levels" ),
+                              resolve_project_path ( "scores.json" ) );
 
     angry::SceneManager scenes;
     scenes.add_scene ( angry::SceneId::Login,
@@ -228,7 +240,7 @@ int main()
     scenes.add_scene ( angry::SceneId::Game, std::make_unique<angry::GameScene> ( font, &accounts ) );
     scenes.add_scene ( angry::SceneId::Result, std::make_unique<angry::ResultScene> ( font ) );
     scenes.switch_to (
-        accounts.isLoggedIn() ? angry::SceneId::Menu : angry::SceneId::Login );
+        accounts.is_logged_in() ? angry::SceneId::Menu : angry::SceneId::Login );
 
     while ( window.isOpen() )
     {
@@ -239,8 +251,8 @@ int main()
 
             if ( const auto* resized = event->getIf<sf::Event::Resized>() )
             {
-                if ( !isFullscreen )
-                    windowedSize = resized->size;
+                if ( !is_fullscreen )
+                    windowed_size = resized->size;
             }
 
             if ( event->is<sf::Event::FocusGained>() )
@@ -251,16 +263,16 @@ int main()
 
             if ( const auto* key = event->getIf<sf::Event::KeyPressed>() )
             {
-                const bool toggleFullscreen =
+                const bool toggle_fullscreen =
                     ( key->code == sf::Keyboard::Key::F11 )
                     || ( key->code == sf::Keyboard::Key::Enter && key->alt );
-                if ( toggleFullscreen )
+                if ( toggle_fullscreen )
                 {
-                    if ( !isFullscreen )
+                    if ( !is_fullscreen )
                     {
-                        windowedSize = window.getSize();
+                        windowed_size = window.getSize();
                     }
-                    recreateWindow ( !isFullscreen );
+                    recreate_window ( !is_fullscreen );
                     if ( auto* game = scenes.get_scene<angry::GameScene> ( angry::SceneId::Game ) )
                         game->notify_window_recreated();
                     continue;
@@ -268,18 +280,18 @@ int main()
 
                 if ( key->code == sf::Keyboard::Key::F10 )
                 {
-                    frameLimitMode = nextFrameLimitMode ( frameLimitMode );
-                    applyFrameLimit();
-                    std::cout << "Frame limit mode: " << frameLimitLabel ( frameLimitMode )
+                    frame_limit_mode = next_frame_limit_mode ( frame_limit_mode );
+                    apply_frame_limit();
+                    std::cout << "Frame limit mode: " << frame_limit_label ( frame_limit_mode )
                               << std::endl;
                     continue;
                 }
 
                 if ( key->code == sf::Keyboard::Key::Escape )
                 {
-                    if ( isFullscreen )
+                    if ( is_fullscreen )
                     {
-                        recreateWindow ( false );
+                        recreate_window ( false );
                         if ( auto* game = scenes.get_scene<angry::GameScene> ( angry::SceneId::Game ) )
                             game->notify_window_recreated();
                         continue;

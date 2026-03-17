@@ -1,3 +1,14 @@
+// ============================================================
+// login_scene.cpp — Login/registration scene implementation.
+// Part of: angry::ui
+//
+// Implements account entry user interactions:
+//   * Captures username/password input and focus changes
+//   * Executes login/register actions through AccountService
+//   * Renders animated background and form widgets
+//   * Emits scene transitions after auth actions
+// ============================================================
+
 #include "ui/login_scene.hpp"
 
 #ifndef __EMSCRIPTEN__
@@ -81,11 +92,15 @@ platform::Color status_color ( int kind )
 
 }  // namespace
 
+// #=# Construction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
 LoginScene::LoginScene ( const platform::Font& font, AccountService& accounts )
     : accounts_ ( accounts )
     , font_ ( font )
 {
 }
+
+// #=# Authentication Logic #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void LoginScene::do_login()
 {
@@ -128,7 +143,7 @@ void LoginScene::do_register()
     status_kind_ = StatusKind::Pending;
     status_clock_.restart();
 
-    const AuthResult r = accounts_.registerAndLogin ( username_buf_, password_buf_ );
+    const AuthResult r = accounts_.register_and_login ( username_buf_, password_buf_ );
     if ( r.success )
     {
         status_msg_  = "Registration successful";
@@ -141,6 +156,8 @@ void LoginScene::do_register()
     }
     status_clock_.restart();
 }
+
+// #=# Input Handling #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 SceneId LoginScene::handle_input ( const platform::Event& event )
 {
@@ -301,6 +318,8 @@ SceneId LoginScene::handle_input ( const platform::Event& event )
 void LoginScene::update()
 {
 }
+
+// #=# Rendering #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void LoginScene::render ( platform::Window& window )
 {

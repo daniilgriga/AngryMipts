@@ -1,3 +1,14 @@
+// ============================================================
+// session_manager_tests.cpp — SessionManager unit tests.
+// Part of: angry::tests
+//
+// Verifies persistent session management behavior:
+//   * Save/load roundtrip for token and username
+//   * Missing file and malformed JSON handling
+//   * Logout/clear semantics for session storage
+//   * In-memory state invariants after operations
+// ============================================================
+
 #include "data/session_manager.hpp"
 
 #include <gtest/gtest.h>
@@ -10,7 +21,9 @@
 namespace
 {
 
-std::filesystem::path makeTempSessionPath()
+// #=# Test Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+std::filesystem::path make_temp_session_path()
 {
     const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
     return std::filesystem::temp_directory_path()
@@ -21,7 +34,7 @@ class TempSessionFile
 {
 public:
     TempSessionFile()
-        : path_( makeTempSessionPath() )
+        : path_( make_temp_session_path() )
     {
     }
 
@@ -31,7 +44,7 @@ public:
         std::filesystem::remove( path_, ec );
     }
 
-    const std::string pathString() const
+    const std::string path_string() const
     {
         return path_.string();
     }
@@ -47,66 +60,67 @@ private:
 
 }  // namespace
 
+// #=# Test Cases #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 TEST( SessionManager, SaveThenLoadRestoresSession )
 {
-    TempSessionFile tempFile;
+    TempSessionFile temp_file;
 
-    angry::SessionManager writer( tempFile.pathString() );
-    writer.setSession( "token-abc", "alex" );
-    writer.saveSession();
+    angry::SessionManager writer( temp_file.path_string() );
+    writer.set_session( "token-abc", "alex" );
+    writer.save_session();
 
-    angry::SessionManager reader( tempFile.pathString() );
-    reader.loadSession();
+    angry::SessionManager reader( temp_file.path_string() );
+    reader.load_session();
 
-    EXPECT_TRUE( reader.isLoggedIn() );
+    EXPECT_TRUE( reader.is_logged_in() );
     EXPECT_EQ( reader.token(), "token-abc" );
     EXPECT_EQ( reader.username(), "alex" );
 }
 
 TEST( SessionManager, MissingFileMeansEmptySession )
 {
-    TempSessionFile tempFile;
+    TempSessionFile temp_file;
 
-    angry::SessionManager sm( tempFile.pathString() );
-    sm.loadSession();
+    angry::SessionManager sm( temp_file.path_string() );
+    sm.load_session();
 
-    EXPECT_FALSE( sm.isLoggedIn() );
+    EXPECT_FALSE( sm.is_logged_in() );
     EXPECT_TRUE( sm.token().empty() );
     EXPECT_TRUE( sm.username().empty() );
 }
 
 TEST( SessionManager, BrokenJsonResultsInEmptySession )
 {
-    TempSessionFile tempFile;
+    TempSessionFile temp_file;
     {
-        std::ofstream out( tempFile.path() );
+        std::ofstream out( temp_file.path() );
         out << "{ not valid json";
     }
 
-    angry::SessionManager sm( tempFile.pathString() );
-    sm.loadSession();
+    angry::SessionManager sm( temp_file.path_string() );
+    sm.load_session();
 
-    EXPECT_FALSE( sm.isLoggedIn() );
+    EXPECT_FALSE( sm.is_logged_in() );
     EXPECT_TRUE( sm.token().empty() );
     EXPECT_TRUE( sm.username().empty() );
 }
 
 TEST( SessionManager, ClearSessionRemovesFileAndState )
 {
-    TempSessionFile tempFile;
+    TempSessionFile temp_file;
 
-    angry::SessionManager sm( tempFile.pathString() );
-    sm.setSession( "token-xyz", "mipt" );
-    sm.saveSession();
+    angry::SessionManager sm( temp_file.path_string() );
+    sm.set_session( "token-xyz", "mipt" );
+    sm.save_session();
 
-    ASSERT_TRUE( std::filesystem::exists( tempFile.path() ) );
-    ASSERT_TRUE( sm.isLoggedIn() );
+    ASSERT_TRUE( std::filesystem::exists( temp_file.path() ) );
+    ASSERT_TRUE( sm.is_logged_in() );
 
-    sm.clearSession();
+    sm.clear_session();
 
-    EXPECT_FALSE( std::filesystem::exists( tempFile.path() ) );
-    EXPECT_FALSE( sm.isLoggedIn() );
+    EXPECT_FALSE( std::filesystem::exists( temp_file.path() ) );
+    EXPECT_FALSE( sm.is_logged_in() );
     EXPECT_TRUE( sm.token().empty() );
     EXPECT_TRUE( sm.username().empty() );
 }
-

@@ -1,3 +1,13 @@
+// ============================================================
+// view_utils.hpp — UI view and viewport helper declarations.
+// Part of: angry::ui
+//
+// Declares reusable helpers for camera/view setup:
+//   * Applies letterbox viewport for fixed world aspect ratio
+//   * Keeps gameplay area proportions across window sizes
+//   * Shared by scenes that render world-space content
+// ============================================================
+
 #pragma once
 
 #include "platform/platform.hpp"

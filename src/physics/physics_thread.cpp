@@ -1,3 +1,14 @@
+// ============================================================
+// physics_thread.cpp — Threaded physics worker implementation.
+// Part of: angry::physics
+//
+// Implements worker-thread orchestration for PhysicsEngine:
+//   * Starts/stops fixed-step simulation thread safely
+//   * Drains command queue and executes deterministic physics ticks
+//   * Publishes double-buffered snapshots for readers
+//   * Collects emitted events into a thread-safe outbound queue
+// ============================================================
+
 #include "physics_thread.hpp"
 
 #include <algorithm>
@@ -5,11 +16,14 @@
 
 namespace angry
 {
+
+// #=# Local Helpers #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 namespace
 {
 
 template <typename T>
-void clearQueue(ThreadSafeQueue<T>& queue)
+void clear_queue(ThreadSafeQueue<T>& queue)
 {
     while (queue.try_pop().has_value())
     {
@@ -18,10 +32,14 @@ void clearQueue(ThreadSafeQueue<T>& queue)
 
 }  // namespace
 
+// #=# Construction / Destruction #=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
 PhysicsThread::~PhysicsThread()
 {
     stop();
 }
+
+// #=# Lifecycle & Command API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void PhysicsThread::start()
 {
@@ -31,9 +49,9 @@ void PhysicsThread::start()
         return;
     }
 
-    stopRequested_.store(false, std::memory_order_release);
+    stop_requested_.store(false, std::memory_order_release);
     running_ = true;
-    worker_ = std::thread(&PhysicsThread::workerLoop, this);
+    worker_ = std::thread(&PhysicsThread::worker_loop, this);
 }
 
 void PhysicsThread::stop()
@@ -45,112 +63,118 @@ void PhysicsThread::stop()
             return;
         }
 
-        stopRequested_.store(true, std::memory_order_release);
+        stop_requested_.store(true, std::memory_order_release);
         running_ = false;
     }
 
-    stopCv_.notify_all();
+    stop_cv_.notify_all();
     if (worker_.joinable())
     {
         worker_.join();
     }
 
-    clearQueue(commandQueue_);
-    clearQueue(eventQueue_);
+    clear_queue(command_queue_);
+    clear_queue(event_queue_);
 }
 
-bool PhysicsThread::isRunning() const
+bool PhysicsThread::is_running() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return running_;
 }
 
-void PhysicsThread::registerLevel(const LevelData& level)
+void PhysicsThread::register_level(const LevelData& level)
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    engine_.registerLevel(level);
+    engine_.register_level(level);
 }
 
-void PhysicsThread::loadLevel(const LevelData& level)
+void PhysicsThread::load_level(const LevelData& level)
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    engine_.registerLevel(level);
+    engine_.register_level(level);
 
     if (running_)
     {
-        commandQueue_.push(LoadLevelCmd{level.meta.id});
+        command_queue_.push(LoadLevelCmd{level.meta.id});
     }
     else
     {
-        engine_.loadLevel(level);
-        publishSnapshotLocked();
+        engine_.load_level(level);
+        publish_snapshot_locked();
     }
 }
 
-void PhysicsThread::loadLevelById(int levelId)
+void PhysicsThread::load_level_by_id(int levelId)
 {
-    commandQueue_.push(LoadLevelCmd{levelId});
+    command_queue_.push(LoadLevelCmd{levelId});
 }
 
-void PhysicsThread::restartLevel(int levelId)
+void PhysicsThread::restart_level(int levelId)
 {
-    commandQueue_.push(RestartCmd{levelId});
+    command_queue_.push(RestartCmd{levelId});
 }
 
-void PhysicsThread::setPaused(bool paused)
+void PhysicsThread::set_paused(bool paused)
 {
-    commandQueue_.push(PauseCmd{paused});
+    command_queue_.push(PauseCmd{paused});
 }
 
-void PhysicsThread::pushCommand(const Command& cmd)
+void PhysicsThread::push_command(const Command& cmd)
 {
-    commandQueue_.push(cmd);
+    command_queue_.push(cmd);
 }
 
-void PhysicsThread::tickSingleThread(float dt)
+// #=# Single-Thread Adapter #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+void PhysicsThread::tick_single_thread(float dt)
 {
-    if (isRunning())
+    if (is_running())
     {
         return;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    engine_.processCommands(commandQueue_);
+    engine_.process_commands(command_queue_);
     engine_.step(dt);
-    publishSnapshotLocked();
+    publish_snapshot_locked();
 
-    std::vector<Event> events = engine_.drainEvents();
+    std::vector<Event> events = engine_.drain_events();
     for (const Event& event : events)
     {
-        eventQueue_.push(event);
+        event_queue_.push(event);
     }
 }
 
-WorldSnapshot PhysicsThread::readSnapshot() const
+// #=# Snapshot / Events API #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+WorldSnapshot PhysicsThread::read_snapshot() const
 {
-    std::lock_guard<std::mutex> lock(snapshotMutex_);
-    const int front = frontSnapshotIndex_.load(std::memory_order_acquire);
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    const int front = front_snapshot_index_.load(std::memory_order_acquire);
     return snapshots_[static_cast<size_t>(front)];
 }
 
-std::vector<Event> PhysicsThread::drainEvents()
+std::vector<Event> PhysicsThread::drain_events()
 {
     std::vector<Event> events;
-    while (const std::optional<Event> event = eventQueue_.try_pop())
+    while (const std::optional<Event> event = event_queue_.try_pop())
     {
         events.push_back(*event);
     }
     return events;
 }
 
-void PhysicsThread::workerLoop()
+// #=# Worker Internals #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
+
+void PhysicsThread::worker_loop()
 {
     using clock = std::chrono::steady_clock;
     const auto fixedDt = std::chrono::duration<double>(kFixedDtSec);
     auto previous = clock::now();
     std::chrono::duration<double> accumulator{0.0};
 
-    while (!stopRequested_.load(std::memory_order_acquire))
+    while (!stop_requested_.load(std::memory_order_acquire))
     {
         const auto now = clock::now();
         accumulator += now - previous;
@@ -160,18 +184,18 @@ void PhysicsThread::workerLoop()
         accumulator = std::min(accumulator, fixedDt * 5);
 
         while (accumulator >= fixedDt
-            && !stopRequested_.load(std::memory_order_acquire))
+            && !stop_requested_.load(std::memory_order_acquire))
         {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                engine_.processCommands(commandQueue_);
+                engine_.process_commands(command_queue_);
                 engine_.step(kFixedDtSec);
-                publishSnapshotLocked();
+                publish_snapshot_locked();
 
-                std::vector<Event> events = engine_.drainEvents();
+                std::vector<Event> events = engine_.drain_events();
                 for (const Event& event : events)
                 {
-                    eventQueue_.push(event);
+                    event_queue_.push(event);
                 }
             }
 
@@ -179,23 +203,25 @@ void PhysicsThread::workerLoop()
         }
 
         std::unique_lock<std::mutex> sleepLock(mutex_);
-        stopCv_.wait_for(
+        stop_cv_.wait_for(
             sleepLock,
             std::chrono::milliseconds(1),
             [this]()
             {
-                return stopRequested_.load(std::memory_order_acquire);
+                return stop_requested_.load(std::memory_order_acquire);
             });
     }
 }
 
-void PhysicsThread::publishSnapshotLocked()
+// Publishes newly computed world state by flipping back/front
+// snapshot buffers under snapshot mutex.
+void PhysicsThread::publish_snapshot_locked()
 {
-    std::lock_guard<std::mutex> lock(snapshotMutex_);
-    const int front = frontSnapshotIndex_.load(std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    const int front = front_snapshot_index_.load(std::memory_order_relaxed);
     const int back = 1 - front;
-    snapshots_[static_cast<size_t>(back)] = engine_.getSnapshot();
-    frontSnapshotIndex_.store(back, std::memory_order_release);
+    snapshots_[static_cast<size_t>(back)] = engine_.get_snapshot();
+    front_snapshot_index_.store(back, std::memory_order_release);
 }
 
 }  // namespace angry

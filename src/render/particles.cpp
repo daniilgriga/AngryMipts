@@ -1,3 +1,14 @@
+// ============================================================
+// particles.cpp — Particle simulation and draw implementation.
+// Part of: angry::render
+//
+// Implements CPU-side particle effects used by gameplay VFX:
+//   * Emission helpers for burst/ring/spray patterns
+//   * Per-frame aging, drag, gravity, and lifetime culling
+//   * Draw paths for circle and shard particles
+//   * Hard-cap and per-frame budget controls for stability
+// ============================================================
+
 #include "render/particles.hpp"
 
 #ifndef __EMSCRIPTEN__
@@ -24,6 +35,8 @@ float rand_float ( float lo, float hi )
 }
 
 }  // namespace
+
+// #=# Emitters #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=
 
 void ParticleSystem::emit ( platform::Vec2f pos, int count, platform::Color color,
                             float speed, float lifetime, float size )
@@ -121,6 +134,8 @@ void ParticleSystem::emit_shards ( platform::Vec2f pos, int count, platform::Col
 
     emitted_this_frame_ += count;
 }
+
+// #=# Update & Render #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 void ParticleSystem::update ( float dt )
 {

@@ -1,3 +1,14 @@
+// ============================================================
+// renderer.hpp — World and HUD rendering facade.
+// Part of: angry::render
+//
+// Declares high-level frame rendering entry points:
+//   * Draws world snapshot objects and slingshot
+//   * Draws HUD state (score, shots, projectile queue)
+//   * Provides projectile textures for UI integrations
+//   * Uses TextureManager for material/projectile assets
+// ============================================================
+
 #pragma once
 #include "platform/platform.hpp"
 #include "render/texture_manager.hpp"
@@ -6,6 +17,8 @@
 namespace angry
 {
 
+// Renders immutable WorldSnapshot content into target-specific
+// draw calls and textures used by UI/game scenes.
 class Renderer
 {
 public:
