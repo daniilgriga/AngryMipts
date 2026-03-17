@@ -1,27 +1,27 @@
 {
   "meta": {
     "id": 1,
-    "name": "First Steps",
+    "name": "level_01",
     "totalShots": 3,
     "starThresholds": [
-      1000,
+      2000,
       2500,
-      4000
+      2990
     ]
   },
   "slingshot": {
     "position": [
-      150,
+      140,
       600
     ],
-    "maxPull": 180
+    "maxPull": 195
   },
   "projectiles": [
     {
       "type": "Standard"
     },
     {
-      "type": "Standard"
+      "type": "Splitter"
     },
     {
       "type": "Heavy"
@@ -30,56 +30,76 @@
   "blocks": [
     {
       "shape": "rect",
-      "material": "Wood",
+      "material": "Glass",
       "position": [
-        800,
-        550
+        870,
+        555
       ],
       "size": [
-        20,
-        100
+        24,
+        90
       ],
       "angle": 0,
-      "hp": 50
+      "hp": 35
+    },
+    {
+      "shape": "rect",
+      "material": "Glass",
+      "position": [
+        1030,
+        555
+      ],
+      "size": [
+        24,
+        90
+      ],
+      "angle": 0,
+      "hp": 35
     },
     {
       "shape": "rect",
       "material": "Wood",
       "position": [
-        900,
-        550
+        950,
+        505
       ],
       "size": [
-        20,
-        100
-      ],
-      "angle": 0,
-      "hp": 50
-    },
-    {
-      "shape": "rect",
-      "material": "Wood",
-      "position": [
-        850,
-        490
-      ],
-      "size": [
-        140,
+        200,
         20
       ],
       "angle": 0,
-      "hp": 50
+      "hp": 55
+    },
+    {
+      "shape": "circle",
+      "material": "Stone",
+      "position": [
+        950,
+        465
+      ],
+      "radius": 28,
+      "angle": 0,
+      "hp": 110
     }
   ],
   "targets": [
     {
       "position": [
-        850,
-        540
+        905,
+        475
       ],
-      "radius": 15,
-      "hp": 20,
-      "score": 1000
+      "radius": 16,
+      "hp": 22,
+      "score": 1400
+    },
+    {
+      "position": [
+        995,
+        475
+      ],
+      "radius": 16,
+      "hp": 22,
+      "score": 1400
     }
   ]
 }
