@@ -638,10 +638,17 @@ inline Rect viewport_pixels( const Window& window, const View& view )
     const float screen_w = static_cast<float> ( std::max ( 1, GetScreenWidth() ) );
     const float screen_h = static_cast<float> ( std::max ( 1, GetScreenHeight() ) );
 
-    const float left = view.viewport_.left * screen_w;
-    const float top = view.viewport_.top * screen_h;
-    const float width = std::max ( 1.f, view.viewport_.width * screen_w );
-    const float height = std::max ( 1.f, view.viewport_.height * screen_h );
+    const float raw_left = view.viewport_.left * screen_w;
+    const float raw_top = view.viewport_.top * screen_h;
+    const float raw_right = ( view.viewport_.left + view.viewport_.width ) * screen_w;
+    const float raw_bottom = ( view.viewport_.top + view.viewport_.height ) * screen_h;
+
+    const float left = std::round ( raw_left );
+    const float top = std::round ( raw_top );
+    const float right = std::round ( raw_right );
+    const float bottom = std::round ( raw_bottom );
+    const float width = std::max ( 1.f, right - left );
+    const float height = std::max ( 1.f, bottom - top );
 
     ( void ) window;
     return { left, top, width, height };
