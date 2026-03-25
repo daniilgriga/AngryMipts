@@ -47,6 +47,11 @@ bool starts_with( const std::string& value, const char* prefix )
     return value.size() >= prefix_len && value.compare( 0, prefix_len, prefix ) == 0;
 }
 
+bool has_http_scheme( const std::string& url )
+{
+    return starts_with( url, "https://" ) || starts_with( url, "http://" );
+}
+
 bool is_local_http_url( const std::string& url )
 {
     return starts_with( url, "http://127.0.0.1" )
@@ -75,8 +80,16 @@ std::string normalize_backend_url( std::string url )
     // Common misconfiguration in web deploy:
     // frontend domain is used instead of API domain.
     if ( url == "angrymipts.ru"
-         || url == "https://angrymipts.ru"
-         || url == "http://angrymipts.ru" )
+         || url == "www.angrymipts.ru"
+         || starts_with( url, "https://angrymipts.ru" )
+         || starts_with( url, "http://angrymipts.ru" )
+         || starts_with( url, "https://www.angrymipts.ru" )
+         || starts_with( url, "http://www.angrymipts.ru" ) )
+    {
+        return std::string( "https://api.angrymipts.ru" );
+    }
+
+    if ( url == "api.angrymipts.ru" || url == "www.api.angrymipts.ru" )
     {
         return std::string( "https://api.angrymipts.ru" );
     }
@@ -86,18 +99,35 @@ std::string normalize_backend_url( std::string url )
 
 std::string resolve_backend_url( std::string base_url )
 {
+    std::string resolved;
     if ( !base_url.empty() )
     {
-        return normalize_backend_url( std::move( base_url ) );
+        resolved = normalize_backend_url( std::move( base_url ) );
     }
-
-    const char* envUrl = std::getenv( kBackendUrlEnvVar );
-    if ( envUrl != nullptr && envUrl[0] != '\0' )
+    else
     {
-        return normalize_backend_url( std::string( envUrl ) );
+        const char* envUrl = std::getenv( kBackendUrlEnvVar );
+        if ( envUrl != nullptr && envUrl[0] != '\0' )
+        {
+            resolved = normalize_backend_url( std::string( envUrl ) );
+        }
     }
 
-    return normalize_backend_url( std::string( kDefaultBackendUrl ) );
+    if ( resolved.empty() )
+    {
+        resolved = normalize_backend_url( std::string( kDefaultBackendUrl ) );
+    }
+
+    if ( !has_http_scheme( resolved ) )
+    {
+        Logger::error(
+            "OnlineScoreClient: invalid backend URL '{}', fallback to default '{}'",
+            resolved,
+            kDefaultBackendUrl );
+        resolved = std::string( kDefaultBackendUrl );
+    }
+
+    return trim_trailing_slashes( std::move( resolved ) );
 }
 
 bool should_retry_request( const platform::http::Response& response )
