@@ -244,7 +244,7 @@ bool OnlineScoreClient::submit_score(
         [&]()
         {
             return platform::http::post(
-                "https://api.angrymipts.ru" + "/scores",
+                "https://api.angrymipts.ru/scores",
                 body.dump(),
                 platform::http::Headers {
                     {"Content-Type", "application/json"},
