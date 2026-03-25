@@ -252,8 +252,13 @@
       overlay.classList.remove('hidden');
     }
 
+    const backendUrl = 'https://api.angrymipts.ru';
+
     var Module = {
       canvas: canvasEl,
+      ENV: {
+        ANGRY_BACKEND_URL: backendUrl
+      },
       preRun: [],
       postRun: [],
       onAbort: function(reason) {
